@@ -15,8 +15,13 @@
     "vite": "^5.2.0"
   },
   "dependencies": {
+    "@c-frame/aframe-physics-system": "^4.2.2",
     "aframe": "^1.5.0",
     "aframe-extras": "^7.4.0",
-    "aframe-orbit-controls": "^1.3.2"
+    "aframe-orbit-controls": "^1.3.2",
+    "aframe-physics-extras": "^0.1.3",
+    "cannon-es": "^0.20.0",
+    "cannon-es-debugger": "^1.0.0",
+    "super-hands": "^3.0.4"
   }
 }

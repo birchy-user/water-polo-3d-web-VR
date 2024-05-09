@@ -1,109 +1,78 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount } from 'svelte';
+
+  import AFrameView from './views/AFrameView.svelte';
+  import ThreeJsView from './views/ThreeJSView.svelte';
+
+  import { AFRAME, THREE } from './fix-dependencies/aframe.js';
+
+  let browserName = '';
   
-  import AFRAME from "aframe";
-
-  // Visi kameras kustību veidi:
-  // import "aframe-extras/controls/index.js";
-  import "aframe-extras";
-  
-  // Saules un debesu objekts:
-  import "./components/sun.js";
-
-  // Peldoša objekta komponente:
-  import "./animations/floating.js";
-
-  // "Drag-n-drop" komponente
-  // Oriģinālais: https://github.com/jesstelford/aframe-click-drag-component
-  // Atjaunotā versija, kas darbojas kopā ar A-Frame 1.5.0: https://github.com/kumitterer/aframe-click-drag-component
-  // import registerClickDrag from '@kumitterer/aframe-click-drag-component';
-
-  let aframeScene;
-
-  let sun;
-
-  let waterPoloBall;
+  let isInVR = false;
 
   onMount(() => {
-    // Ja objekts tiek vilkts pa ekrānu, to attiecīgi marķējam ar statusu "dragging":
-    waterPoloBall.addEventListener('dragstart', (e) => {
-      console.log("dragstart: ", e);
-      e.target.addState('dragging');
-    });
+    console.log("everything is mounted in main scene (AFRAME, THREE debug output): ", AFRAME, THREE);
+    // isInVR = THREE.renderer.xr.isPresenting;
+    isInVR = AFRAME.utils.device.checkHeadsetConnected();
+    browserName = getBrowserName();
 
-    waterPoloBall.addEventListener('dragend', (e) => {
-      console.log("dragend: ", e);
-      e.target.removeState('dragging');
-    });
+    console.log("is user in VR", isInVR);
+    console.log("current browser", browserName);
   });
 
+  const getBrowserName = () => {
+    if (!isInVR) {
+      // Adaptēts no: https://stackoverflow.com/a/9851769
+      // Balstīts uz aktīvajiem pārlūkiem, kas atbalsta WebXR Device API un WebVR API (https://aframe.io/docs/1.5.0/introduction/vr-headsets-and-webxr-browsers.html#what-browsers-support-vr)
+      // Chrome 1 - 79
+      const isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
+
+      // Opera 8.0+
+      const isOpera = (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
+
+      // Firefox 1.0+
+      const isFirefox = typeof InstallTrigger !== 'undefined';
+
+      // Safari 3.0+ "[object HTMLElementConstructor]" 
+      const isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && window['safari'].pushNotification));
+
+      // Internet Explorer 6-11
+      const isIE = /*@cc_on!@*/false || !!document.documentMode;
+      
+      // Edge 20+
+      const isEdge = !isIE && !!window.StyleMedia;
+
+      if (isChrome) return 'Chrome';
+      else if (isOpera) return 'Opera';
+      else if (isFirefox) return 'Firefox';
+      else if (isSafari) return 'Safari';
+      else if (isEdge) return 'Edge';
+      else return 'Unknown Browser';
+
+    } else if (isInVR) {
+      // TODO: Pievienot papildus VR ierīču nosaukumus
+      if (AFRAME.utils.device.isOculusBrowser()) return 'Oculus Browser';
+    }
+
+    if (AFRAME.utils.device.isMobile()) {
+      const userAgent = navigator.userAgent;
+      if (AFRAME.utils.device.isIOS) return 'Safari iOS';
+      else if (/IEMobile|Windows Phone|Lumia/i.test(userAgent)) return 'Windows Phone';
+      else if (/Android/.test(userAgent)) return 'Android';
+      else if (/BlackBerry|PlayBook|BB10/.test(userAgent)) return 'Blackberry';
+      else if (/webOS|Mobile|Tablet|Opera Mini|\bCrMo\/|Opera Mobi/i.test(userAgent)) return 'Unknown mobile browser';
+    }
+
+    return 'Browser could not be identified';
+  }
 </script>
 
-<!-- Avots renderer atribūtam: https://aframe.io/docs/1.2.0/components/renderer.html#logarithmicdepthbuffer -->
-<a-scene 
-  bind:this={aframeScene} 
-  renderer="logarithmicDepthBuffer: true" 
->
-  <!-- Definē brīvi kustināmu kameru: -->
-  <a-entity id="rig" movement-controls position="0 1.6 25">
-    <a-entity
-      camera
-      look-controls
-      orbit-controls="minDistance: 0.5; maxDistance: 180; initialPosition: 0 10 30; screenSpacePanning: true;"
-    >
-    </a-entity>
+<div class="browser-info">
+  <p>Browser: {browserName}</p>
+</div>
 
-    <!-- Oculus Quest 2 kontrolieru pievienošana kreisajai un labajai rokai -->
-    <a-entity 
-      id="leftHandController" 
-      oculus-touch-controls="hand: left" 
-      raycaster="showLine: true; objects: .grabbable"
-    ></a-entity>
-
-    <a-entity 
-      id="rightHandController" 
-      oculus-touch-controls="hand: right" 
-      raycaster="showLine: true; objects: .grabbable"
-    ></a-entity>
-  </a-entity>
-
-  <!-- Apgaismo visu ainu: -->
-  <a-entity light="type: ambient; color: #AAA"></a-entity>
-  <a-entity light="type: directional; color: #DDD; intensity: 0.6" position="0.7 0.4 -1"></a-entity>
-
-  <!-- Ūdenspolo bumbas modeļa (OBJ) ielāde -->
-  <a-assets>
-    <a-asset-item id="water-polo-ball-obj" src="/assets/models/water_polo_goal_FINAL.obj"></a-asset-item>
-    <a-asset-item id="water-polo-ball-mtl" src="/assets/models/water_polo_goal_FINAL.mtl"></a-asset-item>
-  </a-assets>
-
-  <a-entity 
-    id="goal"
-    obj-model="obj: #water-polo-ball-obj; mtl: #water-polo-ball-mtl"
-    position="0 0 -15"
-    scale="15 15 15"
-    rotation="0 -90 0"
-    float-in-water="minAmplitude: -1; maxAmplitude: 0.5"
-  ></a-entity>
-
-  <a-entity
-    bind:this={waterPoloBall}
-    id="ball"
-    gltf-model="url(/assets/models/water_polo_ball_FINAL_v2.glb)" 
-    position="0 -1 -5"
-    scale="1 1 1"
-    float-in-water="minAmplitude: -1; maxAmplitude: 0.4"
-    class="grabbable"
-  ></a-entity>
-
-  <!-- Piemērs okeānam no A-Frame dokumentācijas (oriģināli no: "aframe-extras/primitives/a-ocean", pakotnes avots: https://www.npmjs.com/package/aframe-extras) -->
-  <!-- <a-ocean
-    color="#92E2E2"
-    width="300"
-    depth="300"
-    density="150"
-    speed="0.2"
-  ></a-ocean> -->
-
-  <a-sky-with-sun bind:this={sun} sun-position="1 1 1"></a-sky-with-sun>
-</a-scene>
+{#if isInVR}
+  <AFrameView />
+{:else}
+  <ThreeJsView />
+{/if}
