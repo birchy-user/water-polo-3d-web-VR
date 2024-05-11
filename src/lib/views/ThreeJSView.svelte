@@ -3,12 +3,12 @@
 
     import { THREE, CANNON } from '../fix-dependencies/aframe';
     import CannonDebugger from 'cannon-es-debugger';
+    import { threeToCannon, ShapeType } from 'three-to-cannon';
 
     import { OrbitControls } from 'super-three/addons/controls/OrbitControls.js';
     import Stats from 'super-three/addons/libs/stats.module.js';
 
     // 3D objekti:
-    import { Water } from 'super-three/examples/jsm/objects/Water.js';
     import { Sky } from 'super-three/addons/objects/Sky.js';
 
     import { GPUComputationRenderer } from 'super-three/addons/misc/GPUComputationRenderer.js';
@@ -28,15 +28,11 @@
 
     let water;
     let isWaterRendered = false;
+    let waterPhysicalBody;
 
     let container;
 
     let controls;
-
-    // 3D modeļu objekti:
-    let waterPoloBall;
-    let waterPoloGoalNet;
-    let swimmingPool;
     
     // Saules un debesu parametri:
     const parameters = {
@@ -85,11 +81,19 @@
     let cannonDebugger;
     let physicsWorld;
 
-    let sphereBody;
-    let sphereMesh;
+    // 3D modeļu objekti, fiziskie ķermeņi:
+    let waterPoloBall;
+    let waterPoloBallBody;      // Bumbas fiziskais modelis
 
-    let boxBody;
-    let boxMesh;
+    let waterPoloGoalNet;
+    let goalNetMesh;            // Vārtu rāmis ar tīklu
+    let crossbarWithPostsMesh;  // Vārtu augšējais stabs un sānu stabi
+    let netFrameMesh;           // Balsti, kas savieno tīklu ar stabiem
+    
+    let waterPoloGoalNetBody;   // Vārtu fiziskais modelis
+    
+    let swimmingPool;
+    let swimmingPoolBody;
 
     // Modeļu ielāde:
     const modelLoader = (loader, url) => {
@@ -123,7 +127,6 @@
         sun.setFromSphericalCoords(1, phi, theta);
 
         sky.material.uniforms['sunPosition'].value.copy(sun);
-        // water.material.uniforms['sunDirection'].value.copy(sun).normalize();
 
         sceneEnv.add(sky);
         renderTarget = pmremGenerator.fromScene(sceneEnv);
@@ -139,45 +142,125 @@
             gravity: new CANNON.Vec3(0, -9.81, 0),
         });
 
-        // Bezgalīga plakne
-        const groundBody = new CANNON.Body({
-            type: CANNON.Body.STATIC,
-            shape: new CANNON.Plane()
-        });
+        cannonDebugger = new CannonDebugger(scene, physicsWorld);
 
-        groundBody.position.set(0, 20, 0);
-        groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-        physicsWorld.addBody(groundBody);
+        if (isWaterRendered) {
+            // Ūdens virsmas fiziskais modelis ir nekustīga statiska plakne, kas nelaiž cauri objektus (citādi tas negatīvi ietekmē to animāciju pa ūdens virsmu)
+            waterPhysicalBody = new CANNON.Body({
+                type: CANNON.Body.STATIC,
+                shape: new CANNON.Plane()
+            });
 
-        const radius = 5;
+            // Avots: https://schteppe.github.io/cannon.js/docs/classes/Quaternion.html
+            // "Quaternion" (Q) apraksta rotāciju 3D telpā, kas matetmātiski ir aprakstīta ar formulu: Q = x*i + y*j + z*k + w, kur
+            //      *) i, j, k ir komplekso skaitļu bāzes vektori
+            //      *) (x, y, z) - reālo skaitļu bāzes vektors, kas saistīts ar rotācijas asīm 
+            //      *) w - rotācijas skala (cik daudz rotācijas tiek izpildītas), 0 nozīmē, ka tiek izpildīta viena rotācija
+            waterPhysicalBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+            waterPhysicalBody.position.set(0, 0, 0);
 
-        sphereBody = new CANNON.Body({
-            mass: 5,
-            shape: new CANNON.Sphere(radius)
-        });
-        sphereBody.position.set(0, 50, 0);
-        physicsWorld.addBody(sphereBody);
+            physicsWorld.addBody(waterPhysicalBody);
+        }
 
-        const geometry = new THREE.SphereGeometry(radius);
-        const material = new THREE.MeshNormalMaterial();
-        sphereMesh = new THREE.Mesh(geometry, material);
-        scene.add(sphereMesh);
+        if (waterPoloBall) {
+            console.log(`waterPoloBall`, waterPoloBall);
+            // Ūdenspolo bumbas fiziskais modelis
+            const ballRadius = 5; 
+            waterPoloBallBody = new CANNON.Body({
+                mass: 5,
+                shape: new CANNON.Sphere(ballRadius),
+                position: new CANNON.Vec3(0, 10, 0)
+            });
 
-        cannonDebugger = new CannonDebugger(scene, physicsWorld, {
-            // color: 0xff0000
-        });
+            physicsWorld.addBody(waterPoloBallBody);
+        }
 
-        boxBody = new CANNON.Body({
-            mass: 5,
-            shape: new CANNON.Box(new CANNON.Vec3(1, 1, 1)),
-        });
-        boxBody.position.set(1, 35, 0);
-        physicsWorld.addBody(boxBody);
+        if (waterPoloGoalNet) {
+            // Vārtu modeļa sastāvdaļu izmēri (dimensijas) jeb "bounding box"
+            const backNetMeshBbox = new THREE.Box3().setFromObject(goalNetMesh);
+            const postsBbox = new THREE.Box3().setFromObject(crossbarWithPostsMesh);
+            const upperNetMeshBbox = new THREE.Box3().setFromObject(netFrameMesh);
 
-        const boxGeometry = new THREE.BoxGeometry(2, 2, 2);
-        const boxMaterial = new THREE.MeshNormalMaterial();
-        boxMesh = new THREE.Mesh(boxGeometry, boxMaterial);
-        scene.add(boxMesh);
+            console.log("goal back net ", goalNetMesh);
+            console.log("crossbar and posts: ", crossbarWithPostsMesh);
+            console.log("goal frame ", netFrameMesh);
+
+            // Konstruē fizisko modeli vārtiem un tā sastāvdaļām:
+            waterPoloGoalNetBody = new CANNON.Body({ 
+                mass: 150,
+                position: new CANNON.Vec3(-250, 120, 0)
+            });
+            
+            console.log("backNetMeshBbox", backNetMeshBbox);
+            console.log("postsBbox", postsBbox);
+            console.log("upperNetMeshBbox", upperNetMeshBbox);
+            
+            // 1. VĀRTU AIZMUGURĒJAIS RĀMIS
+            const backNetX = 1;
+            const backNetXOffset = -10;
+            const backNetY = (backNetMeshBbox.max.y - backNetMeshBbox.min.y) / 2;
+            const backNetZ = (backNetMeshBbox.max.z - backNetMeshBbox.min.z) / 2;
+
+            const backNetShape = new CANNON.Box(new CANNON.Vec3(backNetX, backNetY, backNetZ));
+            const backNetPosition = new CANNON.Vec3(backNetXOffset, backNetY, 0);
+
+            waterPoloGoalNetBody.addShape(backNetShape, backNetPosition);
+
+            
+            // 2. VĀRTU STABI (kreisais un labais vārtu stabs + augšējais vārtu stabs)
+
+            const postsX = (postsBbox.max.x - postsBbox.min.x) / 2;  // Dala ar 2, jo jāiegūst vidus punkts katrā objekta iekšējās pasaules asī
+            const postsY = (postsBbox.max.y - postsBbox.min.y) / 2;
+            const postsZ = (postsBbox.max.z - postsBbox.min.z) / 2;
+            const postZOffset = postsZ / 3.15;
+
+            const leftPostShape = new CANNON.Box(new CANNON.Vec3(postsX, postsY, postsX));
+            const rightPostShape = new CANNON.Box(new CANNON.Vec3(postsX, postsY, postsX));
+            
+            const leftPostCenterOffset = new CANNON.Vec3(postsZ - postZOffset, postsY, -postsZ); // +z līdz galam
+            const rightPostCenterOffset = new CANNON.Vec3(postsZ - postZOffset, postsY, postsZ); // -z līdz galam
+            
+            const topCrossbarThickness = 6;
+            const topCrossbarShape = new CANNON.Box(new CANNON.Vec3(postsX, topCrossbarThickness, postsZ));
+            const topCrossbarCenterOffset = new CANNON.Vec3(postsZ - postZOffset, postsY * 2 - topCrossbarThickness, 0);
+            
+            waterPoloGoalNetBody.addShape(leftPostShape, leftPostCenterOffset);
+            waterPoloGoalNetBody.addShape(rightPostShape, rightPostCenterOffset);
+            waterPoloGoalNetBody.addShape(topCrossbarShape, topCrossbarCenterOffset);
+
+            
+            // 3. AUGŠĒJAIS TĪKLS (starp aizmuguri un augšējo vārtu stabu)
+            
+            const upperNetX = (upperNetMeshBbox.max.x - upperNetMeshBbox.min.x) / 2;
+            const upperNetY = (upperNetMeshBbox.max.y - upperNetMeshBbox.min.y) / 2;
+            const upperNetZ = (upperNetMeshBbox.max.z - upperNetMeshBbox.min.z) / 2;
+
+            const upperNetShape = new CANNON.Box(new CANNON.Vec3(upperNetX - topCrossbarThickness, topCrossbarThickness, upperNetZ));
+            const upperNetCenterOffset = new CANNON.Vec3(upperNetX + backNetXOffset, upperNetY * 2, 0);
+
+            waterPoloGoalNetBody.addShape(upperNetShape, upperNetCenterOffset);
+
+
+            // 4. SĀNA TĪKLI (starp aizmuguri un vārtu stabiem)
+            const leftNetShape = new CANNON.Box(new CANNON.Vec3(upperNetX - topCrossbarThickness, postsY, postsX));
+            const rightNetShape = new CANNON.Box(new CANNON.Vec3(upperNetX - topCrossbarThickness, postsY, postsX));
+            
+            const leftNetOffsetCenter = new CANNON.Vec3(upperNetX + backNetXOffset, postsY, -postsZ);
+            const rightNetOffsetCenter = new CANNON.Vec3(upperNetX + backNetXOffset, postsY, postsZ);
+            
+            waterPoloGoalNetBody.addShape(leftNetShape, leftNetOffsetCenter);
+            waterPoloGoalNetBody.addShape(rightNetShape, rightNetOffsetCenter);
+
+            
+            // Izveido noslēgtu kasti ap visiem vārtiem (trūkums: nevar "ieiet iekšā" vārtu rāmī)
+            // const goalBox = threeToCannon(waterPoloGoalNet);
+            // const {shape, offset, orientation} = goalBox;
+            // // waterPoloGoalNetBody.addShape(shape, offset, orientation);
+            // console.log(goalBox);
+
+            // Pievieno salikto virsmu ainas fiziskajai pasaulei
+            physicsWorld.addBody(waterPoloGoalNetBody);
+        }
     };
 
     const onWindowResize = () => {
@@ -199,20 +282,13 @@
         renderer = new THREE.WebGLRenderer();
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.setSize(window.innerWidth, window.innerHeight);
-        // renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        // renderer.toneMappingExposure = 1;
 
         container.appendChild(renderer.domElement);
-        // norāda pārlūkprogrammai, ka visi vilkšanas un pietuvināšanas event-i uz viedierīcēm ir jāignorē
-        container.style.touchAction = 'none';
+        container.style.touchAction = 'none';  // norāda pārlūkprogrammai, ka visi vilkšanas un pietuvināšanas event-i uz viedierīcēm ir jāignorē
 
         // Perspektīvas skata uzstādīšana un novietošana:
         camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 1, 20000);
-        camera.position.set(30, 30, 100);
-
-        // camera = new THREE.PerspectiveCamera( 75, window.innerWidth / window.innerHeight, 1, 3000 );
-        // camera.position.set( 0, 200, 350 );
-        // camera.lookAt( 0, 0, 0 );
+        camera.position.set(200, 100, 100);
 
         // Kameras kustības noteikšana:
         controls = new OrbitControls(camera, renderer.domElement);
@@ -223,7 +299,6 @@
         controls.update();
 
         // Statistikas objekta uzstādīšana:
-        // stats = new TestStats();
         stats = Stats();
         container.appendChild(stats.dom);
 
@@ -255,10 +330,6 @@
         const fbxLoader = new THREE.FBXLoader(loadingManager);
         
         // Ūdenspolo bumba:
-        // waterPoloBall = (await new THREE.GLTFLoader().loadAsync('/assets/models/water_polo_ball_FINAL_v2.glb')).scene;
-        // waterPoloBall.scale.set(3, 3, 3);
-        // scene.add(waterPoloBall);
-
         const waterPoloBallGLTFData = await modelLoader(gltfLoader, '/assets/models/water_polo_ball_FINAL_v2.glb')
             .catch((err) => {
                 console.log("unable to load water polo ball model", err);
@@ -271,7 +342,7 @@
 
             // Peldināšana pa dinamisko ūdens virsmu:
             waterPoloBall.userData.velocity = new THREE.Vector3();
-            
+
             scene.add(waterPoloBall);
         }
         
@@ -284,10 +355,20 @@
 
         if (goalFBXData) {
             waterPoloGoalNet = goalFBXData;
-            waterPoloGoalNet.scale.set(0.7, 0.7, 0.7);
+            waterPoloGoalNet.scale.set(1, 1, 1);
             scene.add(waterPoloGoalNet);
 
-            waterPoloGoalNet.position.x = -250; // Vārti vienmēr atradīsies noteiktā attālumā no futbola bumbas sākotnējās pozīcijas (0, 0, 0)
+            waterPoloGoalNet.traverse((child) => {
+                if (child.isMesh) {
+                    if (child.name === 'Goal') {
+                        goalNetMesh = child;
+                    } else if (child.name === 'Cube002') {
+                        crossbarWithPostsMesh = child;
+                    } else if (child.name === 'Plane001') {
+                        netFrameMesh = child;
+                    }
+                }
+            });
         }
 
         // Baseins:
@@ -306,41 +387,15 @@
             // Noņemam ūdens virsmu, jo to beigās aizvietos ar pareizi novietoto `water` objektu
             swimmingPool.traverse((child) => {
                 if (child.isMesh && child.name === 'WaterSurface') {
-                    console.log("pool waterSurface loaded: ", child);
                     poolWaterSurfaceChildObjects.push(child);
                 }
-            })
+            });
 
             for (const obj of poolWaterSurfaceChildObjects) {
                 obj.removeFromParent();
             }
 
-            // Baseina virsma ir noņemta, tagad var ielādēt `water` modeli un to pozicionēt atbilstoši baseina modeļa izmēriem:
-            // const waterGeometry = new THREE.PlaneGeometry(10000, 10000);
-            // const testWaterGeometry = new THREE.PlaneGeometry(512, 512, 256, 256);
-            // water = new Water(
-            //     testWaterGeometry,
-            //     {
-            //         textureWidth: 512,
-            //         textureHeight: 512,
-            //         waterNormals: new THREE.TextureLoader()
-            //             .load('/assets/textures/waternormals.jpg', (texture) => {
-            //                 texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-            //             }),
-            //         sunDirection: new THREE.Vector3(),
-            //         sunColor: 0xffffff,
-            //         waterColor: 0x001e0f,
-            //         distortionScale: 3.7,
-            //         fog: undefined
-            //     }
-            // );
-
-            // water.material.wireframe = false;
-            // water.rotation.x = - Math.PI / 2;
-
             updateSun();
-
-            // scene.add(water);
 
             scene.add(swimmingPool);
         }
@@ -383,11 +438,11 @@
             waterNormal
         } = waterSetup);
 
+        isWaterRendered = true;
+
         if (waterPoloBall) {
             spheres.push(waterPoloBall);
         }
-
-        isWaterRendered = true;
 
         // Fizikas pasaules un objektu definēšana:
         initPhysics();
@@ -403,13 +458,15 @@
 
         // Fizikas pasaules simulācijas animēšana katrā kadrā:
         if (physicsWorld) {
-            physicsWorld.fixedStep();
-            cannonDebugger.update();
-            
-            boxMesh.position.copy(boxBody.position);
-            boxMesh.quaternion.copy(boxBody.quaternion);
-            sphereMesh.position.copy(sphereBody.position);
-            sphereMesh.quaternion.copy(sphereBody.quaternion);
+            physicsWorld.fixedStep(); // Turpina izpildīt fiziskās pasaules simulācijas darbības
+            cannonDebugger.update();  // Atjaunina fiziskās pasaules atkļūdotāja informāciju
+
+            // Specgadījums: bumbas fiziskā objekta pozīcija ir atkarīga no bumbas atrašanās vietas uz ūdens virsmas
+            waterPoloBallBody.position.copy(waterPoloBall.position);
+            waterPoloBallBody.quaternion.copy(waterPoloBall.quaternion);
+
+            waterPoloGoalNet.position.copy(waterPoloGoalNetBody.position);
+            waterPoloGoalNet.quaternion.copy(waterPoloGoalNetBody.quaternion);
         }
         
         render();
@@ -418,10 +475,6 @@
     };
 
     const render = () => {
-        // if (water) {
-        //     water.material.uniforms['time'].value += 1.0 / 60.0;
-        // }
-        
         if (isWaterRendered) {
             // Ūdens virsmas renderēšana:
             // Staru izstarošana ("raycasting") no peles kursora
@@ -431,7 +484,7 @@
                 const intersects = raycaster.intersectObject(meshRay);
 
                 if (intersects.length > 0) {
-                    // Peles kustība ir ūdens robežās
+                    // Peles kustība ir ūdens robežās, uzstāda pareizās koordinātas
                     const point = intersects[0].point;
                     uniforms['mousePos'].value.set(point.x, point.z);
                 } else {
@@ -460,6 +513,7 @@
             }
 
             // Get compute output in custom uniform
+            // ūdens augstuma shader
             waterUniforms['heightmap'].value = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
         }
 

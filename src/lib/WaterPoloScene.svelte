@@ -24,51 +24,54 @@
     if (!isInVR) {
       // Adaptēts no: https://stackoverflow.com/a/9851769
       // Balstīts uz aktīvajiem pārlūkiem, kas atbalsta WebXR Device API un WebVR API (https://aframe.io/docs/1.5.0/introduction/vr-headsets-and-webxr-browsers.html#what-browsers-support-vr)
-      // Chrome 1 - 79
-      const isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
+      if (AFRAME.utils.device.isMobile()) {
+        const userAgent = navigator.userAgent;
 
-      // Opera 8.0+
-      const isOpera = (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
+        const isIOS = !!userAgent.match(/iPad/i) || !!userAgent.match(/iPhone/i);
+        const webkit = !!userAgent.match(/WebKit/i);
+        const iOSSafari = isIOS && webkit && !userAgent.match(/CriOS/i);
 
-      // Firefox 1.0+
-      const isFirefox = typeof InstallTrigger !== 'undefined';
+        if (iOSSafari) return 'Safari iOS';
+        else if (/^((?!chrome|android).)*safari/i.test(userAgent)) return 'Safari';
+        else if (/IEMobile|Windows Phone|Lumia/i.test(userAgent)) return 'Windows Phone';
+        else if (/Android/.test(userAgent)) return 'Android';
+      } else {
+          // Chrome 1 - 79
+          const isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
 
-      // Safari 3.0+ "[object HTMLElementConstructor]" 
-      const isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && window['safari'].pushNotification));
+          // Opera 8.0+
+          const isOpera = (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
 
-      // Internet Explorer 6-11
-      const isIE = /*@cc_on!@*/false || !!document.documentMode;
-      
-      // Edge 20+
-      const isEdge = !isIE && !!window.StyleMedia;
+          // Firefox 1.0+
+          const isFirefox = typeof InstallTrigger !== 'undefined';
 
-      if (isChrome) return 'Chrome';
-      else if (isOpera) return 'Opera';
-      else if (isFirefox) return 'Firefox';
-      else if (isSafari) return 'Safari';
-      else if (isEdge) return 'Edge';
-      else return 'Unknown Browser';
+          // Safari 3.0+ "[object HTMLElementConstructor]" 
+          const isSafari = /constructor/i.test(window.HTMLElement) || (function (p) { return p.toString() === "[object SafariRemoteNotification]"; })(!window['safari'] || (typeof safari !== 'undefined' && window['safari'].pushNotification));
+
+          // Internet Explorer 6-11
+          const isIE = /*@cc_on!@*/false || !!document.documentMode;
+
+          // Edge 20+
+          const isEdge = !isIE && !!window.StyleMedia;
+
+          if (isChrome) return 'Chrome';
+          else if (isOpera) return 'Opera';
+          else if (isFirefox) return 'Firefox';
+          else if (isSafari) return 'Safari';
+          else if (isEdge) return 'Edge';
+      }
 
     } else if (isInVR) {
       // TODO: Pievienot papildus VR ierīču nosaukumus
       if (AFRAME.utils.device.isOculusBrowser()) return 'Oculus Browser';
     }
 
-    if (AFRAME.utils.device.isMobile()) {
-      const userAgent = navigator.userAgent;
-      if (AFRAME.utils.device.isIOS) return 'Safari iOS';
-      else if (/IEMobile|Windows Phone|Lumia/i.test(userAgent)) return 'Windows Phone';
-      else if (/Android/.test(userAgent)) return 'Android';
-      else if (/BlackBerry|PlayBook|BB10/.test(userAgent)) return 'Blackberry';
-      else if (/webOS|Mobile|Tablet|Opera Mini|\bCrMo\/|Opera Mobi/i.test(userAgent)) return 'Unknown mobile browser';
-    }
-
-    return 'Browser could not be identified';
+    return 'Nezināma pārlūkprogramma';
   }
 </script>
 
 <div class="browser-info">
-  <p>Browser: {browserName}</p>
+  <p>{browserName}</p>
 </div>
 
 {#if isInVR}

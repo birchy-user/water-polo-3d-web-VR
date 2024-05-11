@@ -18,10 +18,10 @@ import { readWaterLevelFragmentShader } from '../shaders/water/readWaterLevelFra
 import { waterVertexShader } from '../shaders/water/vertexShader';
 
 // Tekstūras platums
-const TEXTURE_WIDTH = 128;
+const TEXTURE_WIDTH = 256;
 
 // Ūdens virsmas izmērs (512 x 512)
-const WATER_SURFACE_SIZE = 512;
+const WATER_SURFACE_SIZE = 1024;
 const WATER_SURFACE_SIZE_HALF = WATER_SURFACE_SIZE * 0.5;
 
 const NUM_SPHERES = 5;
@@ -76,11 +76,11 @@ export const initWater = (
     // Material attributes from THREE.MeshPhongMaterial
     // Sets the uniforms with the material values
     // Nosaka "MeshPhongMaterial" materiāla īpašības (atstarošanās, spīdīgums, necaurspīdīgums)
-    material.uniforms['diffuse'].value = new THREE.Color(0x0040C0);
+    material.uniforms['diffuse'].value = new THREE.Color(0x55AAFF); // Gaiši zila krāsa
     material.uniforms['specular'].value = new THREE.Color(0x111111);
     material.uniforms['shininess'].value = 50;
-    material.uniforms['opacity'].value = material.opacity;
-
+    material.uniforms['opacity'].value = 0.5;
+    material.transparent = true;
     
     // Objekti (atslēgas/vērtības pāri), kuri tiks nodoti gan virsotņu ("vertex"), gan daļiņu ("fragment") nokrāsotājiem jeb "shader"
     // Abos "shader" objektos tos varēs izmantot kā mainīgos ar konstantām, atsaucoties uz definētajām atslēgām
@@ -92,8 +92,8 @@ export const initWater = (
     waterUniforms = material.uniforms;
 
     // Pamata ūdens ģeometrija
-    const geometry = new THREE.PlaneGeometry(WATER_SURFACE_SIZE, WATER_SURFACE_SIZE, TEXTURE_WIDTH - 1, TEXTURE_WIDTH - 1);
-    water = new THREE.Mesh(geometry, material);
+    const waterGeometry = new THREE.PlaneGeometry(WATER_SURFACE_SIZE, WATER_SURFACE_SIZE, TEXTURE_WIDTH - 1, TEXTURE_WIDTH - 1);
+    water = new THREE.Mesh(waterGeometry, material);
     water.rotation.x = - Math.PI / 2;
     water.matrixAutoUpdate = false;
     water.updateMatrix();
@@ -101,8 +101,8 @@ export const initWater = (
     scene.add(water);
 
     // Neredzama, statiska plakne pāri visai ūdens virsmai, kas uztver peles kursoru
-    const geometryRay = new THREE.PlaneGeometry(WATER_SURFACE_SIZE, WATER_SURFACE_SIZE, 1, 1);
-    meshRay = new THREE.Mesh(geometryRay, new THREE.MeshBasicMaterial({ color: 0xFFFFFF, visible: false }));
+    const raycastGeometry = new THREE.PlaneGeometry(WATER_SURFACE_SIZE, WATER_SURFACE_SIZE, 1, 1);
+    meshRay = new THREE.Mesh(raycastGeometry, new THREE.MeshBasicMaterial({ color: 0xFFFFFF, visible: false }));
     meshRay.rotation.x = - Math.PI / 2;
     meshRay.matrixAutoUpdate = false;
     meshRay.updateMatrix();
