@@ -32,11 +32,12 @@ const PIXEL_REGION_HEIGHT = 1;
 const simplex = new SimplexNoise();
 
 /**
+ * Izveido jaunu ūdens virsmu, 
  * 
  * @param {Object} effectController - sākotnējie parametri: peles koordinātas un ūdens stigrība (viskozitāte jeb "viscosity")
- * @param {*} scene 
- * @param {*} renderer 
- * @returns 
+ * @param {*} scene - Three.js 3D ainas objekts (galvenā aina, kur viss tiek ievietots iekšā)
+ * @param {*} renderer - 3D ainas renderētājs
+ * @returns dažādi objekti kā ūdens virsmas, GPU aprēķināšanas objekts, ūdens līmeņa un viļņu augstuma "shader" u.c.
  */
 export const initWater = (
     effectController,
@@ -52,8 +53,6 @@ export const initWater = (
     let readWaterLevelShader;
     let readWaterLevelImage;
     let readWaterLevelRenderTarget;
-    let spheres = [];
-    const waterNormal = new THREE.Vector3();
 
     // Izveido jaunu "Shader" materiālu, kopējot "MeshPhongMaterial" materiālu no https://threejs.org/docs/#api/en/materials/MeshPhongMaterial
     // Iegūtā materiāla virsotnes apstrādā ar atsevišķo "waterVertexShader" objektu, kas definēts failā `../shaders/water/vertexShader`
@@ -176,14 +175,16 @@ export const initWater = (
         readWaterLevelShader,
         readWaterLevelImage,
         readWaterLevelRenderTarget,
-        spheres,
         water,
-        meshRay,
-        waterNormal
+        meshRay
     };
 }
 
-// Aizpilda tekstūru, izmantojot 2D "Simplex Noise" trokšņa ģenerēšanas algoritmu (https://en.wikipedia.org/wiki/Simplex_noise)
+/**
+ * Aizpilda tekstūru, izmantojot 2D "Simplex Noise" trokšņa ģenerēšanas algoritmu (https://en.wikipedia.org/wiki/Simplex_noise)
+ *
+ * @param {*} texture - tekstūras objekts
+ */
 const fillTexture = (texture) => {
     const waterMaxHeight = 10;
 
@@ -217,13 +218,25 @@ const fillTexture = (texture) => {
             pixels[p + 3] = 1;
 
             p += 4;
-
         }
-
     }
-
 }
 
+/**
+ * Nolasa ūdens līmeni katrā ūdens virsmas punktā, no tā nosaka, 
+ * cik tālu vajag kustināt peldošos objektus (`floatingObjects`), 
+ * balstoties pēc to pozīcijas un ūdens līmeņa izmaiņām (atkarībā no radītajiem viļņiem)
+ * 
+ * @param {*} renderer - 3D ainas renderētājs
+ * @param {*} gpuCompute - GPU aprēķinu izpildīšanas objekts
+ * @param {*} heightmapVariable - ūdens viļņu augstuma tekstūra, kas nosaka, cik augstu paceļas vilnis katrā ūdens līmeņa tekstūras tekselī
+ * @param {*} readWaterLevelShader - daļinu ēnotājs jeb "fragment shader", kas uztver un reģistrē izmaiņas ūdens līmeņa tekstūrā (nosaka, kā jāmaina katrs tekstūras tekselis atbilstoši izmaiņām ūdens virsmā)
+ * @param {*} readWaterLevelRenderTarget - ūdens līmeņa tekstūras renderēšanas mērķobjekts, ar kura palīdzību attēlo izmaiņas pa tiešo tā tekstūrā 
+ * @param {*} readWaterLevelImage - buferis, pēc kura nolasa ūdens līmeni katrā ūdens līmeņa tekstūras tekselī ("texel")
+ * @param {*} waterNormal - normāles vektors, kas norāda uz ūdens virsmas centru (0, 0, 0)
+ * @param {*} floatingObjects - peldošie objekti
+ * @param {*} floatingObjectsWithBodies - peldošo objektu atbilstošie fiziskās pasaules ķermeņi
+ */
 export const sphereDynamics = (
     renderer,
     gpuCompute,
@@ -232,21 +245,24 @@ export const sphereDynamics = (
     readWaterLevelRenderTarget,
     readWaterLevelImage,
     waterNormal,
-    spheres
+    floatingObjects,
+    floatingObjectsWithBodies
 ) => {
 
     // Iegūst "heightmap" mainīgā GPU renderētājā iegūto rezultātu, to izmanto, lai atjaunotu ūdens virsmas līmeņa tekstūru nākošajā kadrā
     readWaterLevelShader.uniforms['levelTexture'].value = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
 
-    for (const sphere of spheres) {
-        // TODO: Izlabot problēmu, kur `sphereDynamics` apstājas tad, kad bumba saskarās ar vārtiem
-        // Visu laiku vajag būt `sphereDynamics`, bet, kad bumba saskarās ar vārtiem, tad izslēdz `sphereDynamics`, to aizmet pretējā virzienā un tad atkal ieslēdz atpakaļ `sphereDynamics` 
-        if (!sphere || sphere.userData.collidedWithGoal) continue;
+    for (const obj of floatingObjects) {
+        if (obj) {
+            const physicalBody = floatingObjectsWithBodies[obj.name];
 
-        if (sphere) {
+            if (!physicalBody || obj.userData.collidedWithGoal || obj.userData.isDragging) { 
+                continue;
+            }
+
             // Nolasa peldošā objekta koordinātas ūdens virsmā, tās izmanto kā atskaites punktu, pēc kura nosaka, kurā vietā ūdens līmeņa tekstūrā tiks renderēts vilnis 
-            const x = 0.5 * sphere.position.x / WATER_SURFACE_SIZE_HALF + 0.5;
-            const z = 1 - (0.5 * sphere.position.z / WATER_SURFACE_SIZE_HALF + 0.5);
+            const x = 0.5 * physicalBody.position.x / WATER_SURFACE_SIZE_HALF + 0.5;
+            const z = 1 - (0.5 * physicalBody.position.z / WATER_SURFACE_SIZE_HALF + 0.5);
             readWaterLevelShader.uniforms['point1'].value.set(x, z);
             
             // Pirms kadra renderēšanas no iepriekšējā kadra paņem ūdens līmeni, pēc tā aprēķina, kāds būs ūdens līmenis un tā orientācija šajā kadrā, to ievieto ūdens līmeņa renderēšanas mērķobjektā
@@ -274,31 +290,35 @@ export const sphereDynamics = (
             // Iegūst virzienu, kurā pēc peles kustināšanas tiek virzīts peldošais objekts
             waterNormal.set(pixels[1], 0, - pixels[2]);
 
-            const pos = sphere.position;
-            pos.y = pixels[0];
+            const pos = physicalBody.position;
+            physicalBody.position.y = pixels[0];
 
             // Kustina peldošo objektu par 0.1 vienībām attiecīgajā virzienā
-            waterNormal.multiplyScalar(0.1);
-            sphere.userData.velocity.add(waterNormal);
-            sphere.userData.velocity.multiplyScalar(0.998);
-            pos.add(sphere.userData.velocity);
+            waterNormal.scale(0.1);  // skalāri pareizina normāles vektoru ar 0.1
+            physicalBody.velocity.vadd(waterNormal, physicalBody.velocity);  // physicalBody.velocity = physicalBody.velocity + waterNormal (saskaita abus vektorus)
+            physicalBody.velocity.scale(0.998);  // apslāpē kustību
+            pos.vadd(physicalBody.velocity);
 
-            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu (pa labi / pa kreisi)
+            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu
             if (pos.x < - WATER_SURFACE_SIZE_HALF) {
+                // uz leju
                 pos.x = - WATER_SURFACE_SIZE_HALF + 0.001;
-                sphere.userData.velocity.x *= - 0.3;
+                physicalBody.velocity.x *= - 0.3;
             } else if (pos.x > WATER_SURFACE_SIZE_HALF) {
+                // uz augšu
                 pos.x = WATER_SURFACE_SIZE_HALF - 0.001;
-                sphere.userData.velocity.x *= - 0.3;
+                physicalBody.velocity.x *= - 0.3;
             }
 
-            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu (uz augšu / uz leju)
+            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu
             if (pos.z < - WATER_SURFACE_SIZE_HALF) {
+                // pa kreisi
                 pos.z = - WATER_SURFACE_SIZE_HALF + 0.001;
-                sphere.userData.velocity.z *= - 0.3;
+                physicalBody.velocity.z *= - 0.3;
             } else if (pos.z > WATER_SURFACE_SIZE_HALF) {
+                // pa labi
                 pos.z = WATER_SURFACE_SIZE_HALF - 0.001;
-                sphere.userData.velocity.z *= - 0.3;
+                physicalBody.velocity.z *= - 0.3;
             }
         }
     }
