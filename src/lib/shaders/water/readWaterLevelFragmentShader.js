@@ -1,4 +1,6 @@
 export const readWaterLevelFragmentShader = /* glsl */`
+    
+    // Viļna izveidošanas sākuma punkts (kurā vietā ūdens līmeņa tekstūrā reģistrēts pacēlums)
     uniform vec2 point1;
 
     uniform sampler2D levelTexture;

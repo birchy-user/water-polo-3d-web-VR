@@ -49,7 +49,6 @@
     // Peles kursora koordinātas NDC (normalizētā) formātā (x, y), vērtības robežās [-1; 1], kuras padod staru izstarotājam ("raycaster")
     // NDC avots: https://learnopengl.com/Getting-started/Coordinate-Systems
     // Tās aprēķina, ņemot peles kursora atrašanās vietu relatīvi renderētās ainas robežām, un normalizējot iegūtās vērtibas
-    /** @see setMouseCoords - aprēķina formulas pamatojums */
     const mouseCoords = new THREE.Vector2();
     const raycaster = new THREE.Raycaster();
 
@@ -138,9 +137,21 @@
     // Definē ainas fizisko pasauli, izmantojot Cannon.js
     // Fiziskās pasaules objektus jāspēj sasaistīt kopā ar renderētajiem (vizuāli redzamajiem) objektiem
     const initPhysics = () => {
+        // Fiziskās pasaules īpašības
         physicsWorld = new CANNON.World({
             gravity: new CANNON.Vec3(0, -9.81, 0),
         });
+
+        // objektu sadursmes materiāli:
+        const ballMaterial = new CANNON.Material();
+        const goalNetMaterial = new CANNON.Material();
+
+        const ballGoalContactMaterial = new CANNON.ContactMaterial(ballMaterial, goalNetMaterial, {
+            restitution: 0.9, // Jo augstāka restitūcija, jo spēcīgāk atsitas pret citu virsmu, ar kuru saduras
+            friction: 0.3     // Berze
+        });
+
+        physicsWorld.addContactMaterial(ballGoalContactMaterial);
 
         cannonDebugger = new CannonDebugger(scene, physicsWorld);
 
@@ -169,8 +180,12 @@
             waterPoloBallBody = new CANNON.Body({
                 mass: 5,
                 shape: new CANNON.Sphere(ballRadius),
-                position: new CANNON.Vec3(0, 10, 0)
+                position: new CANNON.Vec3(0, 10, 0),
+                material: ballMaterial
             });
+
+            // Lai noteiktu pareizu kustību, vajag sekot līdzi, kad bumba saskārās ar vārtu objektu:
+            waterPoloBall.userData.collidedWithGoal = false;
 
             physicsWorld.addBody(waterPoloBallBody);
         }
@@ -187,8 +202,9 @@
 
             // Konstruē fizisko modeli vārtiem un tā sastāvdaļām:
             waterPoloGoalNetBody = new CANNON.Body({ 
-                mass: 150,
-                position: new CANNON.Vec3(-250, 120, 0)
+                mass: 0,
+                position: new CANNON.Vec3(-250, 1, 0),
+                material: goalNetMaterial
             });
             
             console.log("backNetMeshBbox", backNetMeshBbox);
@@ -250,7 +266,6 @@
             
             waterPoloGoalNetBody.addShape(leftNetShape, leftNetOffsetCenter);
             waterPoloGoalNetBody.addShape(rightNetShape, rightNetOffsetCenter);
-
             
             // Izveido noslēgtu kasti ap visiem vārtiem (trūkums: nevar "ieiet iekšā" vārtu rāmī)
             // const goalBox = threeToCannon(waterPoloGoalNet);
@@ -260,6 +275,31 @@
 
             // Pievieno salikto virsmu ainas fiziskajai pasaulei
             physicsWorld.addBody(waterPoloGoalNetBody);
+        }
+
+        // SADURSMES FIZIKAS (Collisions):
+        waterPoloBallBody.addEventListener('collide', (event) => {
+            if (event.body === waterPoloGoalNetBody) {
+                console.log("ball collided with the net: ", event);
+                console.log('Collision normal:', event.contact.ni.toString());
+
+                waterPoloBall.userData.collidedWithGoal = true;
+
+                const impactStrength = event.contact.getImpactVelocityAlongNormal();
+
+                console.log("impactStrength: ", impactStrength);
+
+                // TODO: Ieviest sadursmes pretējo kustību atkarībā no tās intensitātes 
+
+
+                // if (impactStrength > 5) {
+                //     animateGoalNetSway(impactStrength, event.contact.bi.position, event.contact.ni);
+                // }
+            }
+        });
+
+        const animateGoalNetSway = (impactStrength, position, normal) => {
+            // TODO: Vārtu "šūpošanās" atkarībā no bumbas lidošanas ātruma
         }
     };
 
@@ -420,8 +460,7 @@
         const waterSetup = initWater(
             effectController,
             scene,
-            renderer,
-            spheresEnabled
+            renderer
         );
 
         ({
@@ -462,6 +501,14 @@
             cannonDebugger.update();  // Atjaunina fiziskās pasaules atkļūdotāja informāciju
 
             // Specgadījums: bumbas fiziskā objekta pozīcija ir atkarīga no bumbas atrašanās vietas uz ūdens virsmas
+            // if (waterPoloBall.userData.collidedWithGoal) {
+            //     waterPoloBallBody.position.copy(waterPoloBall.position);
+            //     waterPoloBallBody.quaternion.copy(waterPoloBall.quaternion);
+            //     waterPoloBall.userData.collidedWithGoal = false;
+            // }
+
+            // TODO: Izlabot problēmu, kur `sphereDynamics` apstājas tad, kad bumba saskarās ar vārtiem
+            // Visu laiku vajag būt `sphereDynamics`, bet, kad bumba saskarās ar vārtiem, tad izslēdz `sphereDynamics`, to aizmet pretējā virzienā un tad atkal ieslēdz atpakaļ `sphereDynamics` 
             waterPoloBallBody.position.copy(waterPoloBall.position);
             waterPoloBallBody.quaternion.copy(waterPoloBall.quaternion);
 
@@ -476,7 +523,6 @@
 
     const render = () => {
         if (isWaterRendered) {
-            // Ūdens virsmas renderēšana:
             // Staru izstarošana ("raycasting") no peles kursora
             const uniforms = heightmapVariable.material.uniforms;
             if (mouseMoved) {
@@ -499,21 +545,22 @@
 
             gpuCompute.compute();
 
-            if (spheresEnabled) {
-                sphereDynamics(
-                    renderer,
-                    gpuCompute,
-                    heightmapVariable,
-                    readWaterLevelShader,
-                    readWaterLevelRenderTarget,
-                    readWaterLevelImage,
-                    waterNormal,
-                    spheres
-                );
+            if (!waterPoloBall.userData.collidedWithGoal) {
+                if (spheresEnabled) {
+                    sphereDynamics(
+                        renderer,
+                        gpuCompute,
+                        heightmapVariable,
+                        readWaterLevelShader,
+                        readWaterLevelRenderTarget,
+                        readWaterLevelImage,
+                        waterNormal,
+                        spheres
+                    );
+                }
             }
 
-            // Get compute output in custom uniform
-            // ūdens augstuma shader
+            // pirms kadra renderēšanas iegūst ūdens līmeņa augstuma ("heightmap") iegūto rezultātu GPU renderētājā, to atjauno "fragment shader" objektā
             waterUniforms['heightmap'].value = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
         }
 

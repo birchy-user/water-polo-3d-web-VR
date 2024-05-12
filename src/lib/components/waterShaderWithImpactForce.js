@@ -12,6 +12,7 @@ import { THREE } from '../fix-dependencies/aframe';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
+// Visi ūdens virsmas mainīšanai nepieciešamie "shader" objekti:
 import { heightMapFragmentShader } from '../shaders/water/heightmapFragmentShader.js';
 import { smoothFragmentShader } from '../shaders/water/smoothFragmentShader';
 import { readWaterLevelFragmentShader } from '../shaders/water/readWaterLevelFragmentShader';
@@ -24,23 +25,23 @@ const TEXTURE_WIDTH = 256;
 const WATER_SURFACE_SIZE = 1024;
 const WATER_SURFACE_SIZE_HALF = WATER_SURFACE_SIZE * 0.5;
 
-const NUM_SPHERES = 5;
+// Nolasāmā pikseļa reģions:
+const PIXEL_REGION_WIDTH = 4;
+const PIXEL_REGION_HEIGHT = 1;
 
 const simplex = new SimplexNoise();
 
 /**
  * 
- * @param {Object} effectController - sākotnējie 
+ * @param {Object} effectController - sākotnējie parametri: peles koordinātas un ūdens stigrība (viskozitāte jeb "viscosity")
  * @param {*} scene 
  * @param {*} renderer 
- * @param {*} spheresEnabled 
  * @returns 
  */
 export const initWater = (
     effectController,
     scene,
-    renderer,
-    spheresEnabled
+    renderer
 ) => {
     let water;
     let meshRay;
@@ -57,8 +58,6 @@ export const initWater = (
     // Izveido jaunu "Shader" materiālu, kopējot "MeshPhongMaterial" materiālu no https://threejs.org/docs/#api/en/materials/MeshPhongMaterial
     // Iegūtā materiāla virsotnes apstrādā ar atsevišķo "waterVertexShader" objektu, kas definēts failā `../shaders/water/vertexShader`
     // Daļiņu ("fragment") "shader" nosaka, kādā krāsā jāiekrāso katra virsmas (3D objekta) daļa (šajā gadījumā izmanto "meshphong_frag" no https://github.com/mrdoob/three.js/blob/master/src/renderers/shaders/ShaderLib/meshphong.glsl.js)
-
-    // TODO: Iekļaut aprakstu no https://threejs.org/docs/#api/en/materials/ShaderMaterial par "shader" pamatiem
     const material = new THREE.ShaderMaterial({
         uniforms: THREE.UniformsUtils.merge([
             THREE.ShaderLib['phong'].uniforms,
@@ -73,9 +72,7 @@ export const initWater = (
     // Sniedz iespēju "vertex shader" nodot datus par materiāla apgaismojumu
     material.lights = true;
 
-    // Material attributes from THREE.MeshPhongMaterial
-    // Sets the uniforms with the material values
-    // Nosaka "MeshPhongMaterial" materiāla īpašības (atstarošanās, spīdīgums, necaurspīdīgums)
+    // Nosaka "MeshPhongMaterial" materiāla konstantās īpašības (atstarošanās, spīdīgums, necaurspīdīgums)
     material.uniforms['diffuse'].value = new THREE.Color(0x55AAFF); // Gaiši zila krāsa
     material.uniforms['specular'].value = new THREE.Color(0x111111);
     material.uniforms['shininess'].value = 50;
@@ -112,17 +109,19 @@ export const initWater = (
     // 1. Izveido renderētāju
     gpuCompute = new GPUComputationRenderer(TEXTURE_WIDTH, TEXTURE_WIDTH, renderer);
 
-    // 2. Definē "tukšu" sākotnējo tekstūru 128 x 128 izmērā, to aizpildot ar 32-bitu skaitļu masīvu (128*4 x 128*4), kur katrs elements = 0
-    // Rezultātā iegūst 128 x 128 tekstūru, kas atbilst melnai krāsai
+    // 2. Definē "tukšu" sākotnējo tekstūru TEXTURE_WIDTH x TEXTURE_WIDTH izmērā, to aizpildot ar 32-bitu skaitļu masīvu (TEXTURE_WIDTH*4 x TEXTURE_WIDTH*4), kur katrs elements = 0
     const heightmap0 = gpuCompute.createTexture();
 
     // 3. Tukšo tekstūru aizpilda ar datiem
     fillTexture(heightmap0);
 
-    // 4. Definē "heightmap" tekstūras mainīgo, kas nosaka ūdens virsmas augstumu dažādos fragmentos (simulē viļņus)
+    // 4. Definē "heightmap" tekstūras mainīgo, kas nosaka ūdens virsmas augstumu dažādos fragmentos (simulē viļņus), izmantojot iepriekš aizpildīto tukšo bāzes tekstūru kā sākuma stāvokli
+    // Katrs mainīgais atbilst RGBA peldošā punkta tipa tekstūras, kas satur 4 peldošā punkta skaitļus katram aprēķinātajam elementam jeb tekselim ("texel", tekstūras pikselis)
+    // Katram mainīgajam ir "fragment shader", kas definē nepieciešamās skaitļošanas darbības mainīgā iegūšanai un izmantošanai iekš "fragment shader"
     heightmapVariable = gpuCompute.addVariable('heightmap', heightMapFragmentShader, heightmap0);
 
-    // 5. Viļņu augstuma mainīgās vērtības atkarības definēšana
+    // 5. Viļņu augstuma mainīgās vērtības tekstūras atkarības definēšana (parasti mainīgajiem tā vispirms ir saistība ar sevi pašu)
+    // Mainīgajam var norādīt citas atkarības, tādā veidā nodrošinot, ka tās
     gpuCompute.setVariableDependencies(heightmapVariable, [heightmapVariable]);
 
     // 6. "Uniforms" mainīgo noklusējuma vērtības, kurus nodos "shader" objektam 
@@ -141,7 +140,6 @@ export const initWater = (
         console.error(error);
     }
 
-    // Create compute shader to smooth the water surface and velocity
     // "Shader", kas "nomierina" ūdens virsmu, pakāpeniski katrā kadrā samazinot tās krāsas deformācijas
     // smoothShader = gpuCompute.createShaderMaterial(smoothFragmentShader, { smoothTexture: { value: null } });
 
@@ -153,11 +151,11 @@ export const initWater = (
     readWaterLevelShader.defines.TEXTURE_WIDTH = TEXTURE_WIDTH.toFixed(1);
     readWaterLevelShader.defines.WATER_SURFACE_SIZE = WATER_SURFACE_SIZE.toFixed(1);
 
-    // Izveido 4x1 pikseļa attēlu un renderēšanas mērķobjektu (4 kanāli, 1 baits kanālā), ar kura palīdzību var nolasīt ūdens augstumu un virzienu
-    // Tas tiek izmantots kā buferis, kurā fonā tiek veikta pirmsrenderēšanas aprēķini
+    // Izveido 4x1 pikseļa attēlu un renderēšanas mērķobjektu (4 kanāli, 1 baits kanālā), ar kura palīdzību var attēlot un mainīt pikseļus tekstūrā nevis pašā ainā ("canvas") tiešā veidā
+    // Tas tiek izmantots kā buferis, kurā tiek veikti pirmsrenderēšanas aprēķini (ievietoti ūdens līmeņa aprēķina rezultējošie pikseļi)
     // Avots: https://threejs.org/docs/#api/en/renderers/WebGLRenderTarget
-    readWaterLevelImage = new Uint8Array(4 * 1 * 4);
-    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget(4, 1, {
+    readWaterLevelImage = new Uint8Array(PIXEL_REGION_WIDTH * PIXEL_REGION_HEIGHT * 4);
+    readWaterLevelRenderTarget = new THREE.WebGLRenderTarget(PIXEL_REGION_WIDTH, PIXEL_REGION_HEIGHT, {
         wrapS: THREE.ClampToEdgeWrapping,
         wrapT: THREE.ClampToEdgeWrapping,
         minFilter: THREE.NearestFilter,
@@ -167,16 +165,8 @@ export const initWater = (
         depthBuffer: false
     });
 
-    spheres = createSpheres(scene);
-
     heightmapVariable.material.uniforms['mouseSize'].value = effectController.mouseSize;
     heightmapVariable.material.uniforms['viscosityConstant'].value = effectController.viscosity;
-    spheresEnabled = effectController.spheresEnabled;
-    for (let i = 0; i < NUM_SPHERES; i ++) {
-        if (spheres[i]) {
-            spheres[i].visible = spheresEnabled;
-        }
-    }
 
     return {
         gpuCompute,
@@ -212,9 +202,9 @@ const fillTexture = (texture) => {
 
     const pixels = texture.image.data;
 
-    // Ienākošā tekstūra ir 128 x 128 izmērā, katru vērtību aizpilda ar citu trokšņainu vērtību,
+    // Ienākošā tekstūra ir TEXTURE_WIDTH x TEXTURE_WIDTH izmērā, katru vērtību aizpilda ar jaunu trokšņainu vērtību,
     // izmantojot Simplex Noise algoritma pamata ideju, kas ietver procesu, kurā katrai virsotnei (pikselim) aprēķina tās atbilstošo četrstūri (no tuvākajām četrām virsotnēm)    
-    // Rezultātā iegūst datus, kas atbilst trokšņainam gradientam, kas sastāv no dažāda izmēra četrstūriem, kas pārvilkti pāri astoņstūriem
+    // Rezultātā iegūst tekstūru, kas atbilst trokšņainai ūdens virsmai, simulējot viļņus dažādos augstumos un pozīcijās (atbilstoši Simplex Noise trokšņa algoritmam)
     let p = 0;
     for (let j = 0; j < TEXTURE_WIDTH; j ++) {
         for (let i = 0; i < TEXTURE_WIDTH; i ++) {
@@ -234,35 +224,6 @@ const fillTexture = (texture) => {
 
 }
 
-const createSpheres = (scene) => {
-    const spheres = [];
-
-    const sphereTemplate = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 12), new THREE.MeshPhongMaterial({ color: 0xFFFF00 }));
-
-    for (let i = 0; i < NUM_SPHERES; i ++) {
-
-        let sphere = sphereTemplate;
-        if (i < NUM_SPHERES - 1) {
-
-            sphere = sphereTemplate.clone();
-
-        }
-
-        sphere.position.x = (Math.random() - 0.5) * WATER_SURFACE_SIZE * 0.7;
-        sphere.position.z = (Math.random() - 0.5) * WATER_SURFACE_SIZE * 0.7;
-
-        sphere.userData.velocity = new THREE.Vector3();
-
-        scene.add(sphere);
-
-        spheres[i] = sphere;
-
-    }
-
-    return spheres;
-
-}
-
 export const sphereDynamics = (
     renderer,
     gpuCompute,
@@ -274,33 +235,55 @@ export const sphereDynamics = (
     spheres
 ) => {
 
-    const currentRenderTarget = gpuCompute.getCurrentRenderTarget(heightmapVariable);
-
-    readWaterLevelShader.uniforms['levelTexture'].value = currentRenderTarget.texture;
+    // Iegūst "heightmap" mainīgā GPU renderētājā iegūto rezultātu, to izmanto, lai atjaunotu ūdens virsmas līmeņa tekstūru nākošajā kadrā
+    readWaterLevelShader.uniforms['levelTexture'].value = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
 
     for (const sphere of spheres) {
+        // TODO: Izlabot problēmu, kur `sphereDynamics` apstājas tad, kad bumba saskarās ar vārtiem
+        // Visu laiku vajag būt `sphereDynamics`, bet, kad bumba saskarās ar vārtiem, tad izslēdz `sphereDynamics`, to aizmet pretējā virzienā un tad atkal ieslēdz atpakaļ `sphereDynamics` 
+        if (!sphere || sphere.userData.collidedWithGoal) continue;
+
         if (sphere) {
-            // Read water level and orientation
-            const u = 0.5 * sphere.position.x / WATER_SURFACE_SIZE_HALF + 0.5;
-            const v = 1 - (0.5 * sphere.position.z / WATER_SURFACE_SIZE_HALF + 0.5);
-            readWaterLevelShader.uniforms['point1'].value.set(u, v);
+            // Nolasa peldošā objekta koordinātas ūdens virsmā, tās izmanto kā atskaites punktu, pēc kura nosaka, kurā vietā ūdens līmeņa tekstūrā tiks renderēts vilnis 
+            const x = 0.5 * sphere.position.x / WATER_SURFACE_SIZE_HALF + 0.5;
+            const z = 1 - (0.5 * sphere.position.z / WATER_SURFACE_SIZE_HALF + 0.5);
+            readWaterLevelShader.uniforms['point1'].value.set(x, z);
+            
+            // Pirms kadra renderēšanas no iepriekšējā kadra paņem ūdens līmeni, pēc tā aprēķina, kāds būs ūdens līmenis un tā orientācija šajā kadrā, to ievieto ūdens līmeņa renderēšanas mērķobjektā
             gpuCompute.doRenderTarget(readWaterLevelShader, readWaterLevelRenderTarget);
 
-            renderer.readRenderTargetPixels(readWaterLevelRenderTarget, 0, 0, 4, 1, readWaterLevelImage);
+            // Nolasa datus par pikseļu krāsām noteiktā reģionā (4 x 1 jeb četrstūrī) ūdens līmeņa renderēšanas mērķobjektā un tos ievieto iekšā `readWaterLevelImage` buferī
+            // To izmanto, lai pašreizējā kadrā no "shader" iegūtu pikseļu vērtības
+            renderer.readRenderTargetPixels(
+                readWaterLevelRenderTarget, // No kurienes ielasa datus (ņem iepriekšējā kadrā renderēto ūdens līmeni)
+                0,                          // pirmais apakšējā-kreisā stūra horizontālais pikselis, no kura sāk nolasīšanu
+                0,                          // pirmais apakšējā-kreisā stūra vertikālais pikselis, no kura sāk nolasīšanu
+                PIXEL_REGION_WIDTH,         // nolasāmā reģiona platums
+                PIXEL_REGION_HEIGHT,        // nolasāmā reģiona augstums
+                readWaterLevelImage         // bufera objekts, kurā ievietos visus nolasītā ūdens līmeņa reģiona pikseļus RGBA formātā
+            );
+
+            // Buferis, kas satur ūdens līmeņa renderēšanas mērķobjekta pikseļu vērtības RGBA formātā (pixels[0] = R, pixels[1] = G, pixels[2] = B, pixels[3] = A (alpha jeb caurspīdīgums))
+            // Šajā gadījumā: 
+            //      *) pixels[0] = <ūdens līmeņa y noteiktā punktā>
+            //      *) pixels[1] = <ūdens līmeņa x noteiktā punktā>
+            //      *) pixels[2] = <ūdens līmeņa z noteiktā punktā>
+            //      *) pixels[3] = (neizmantots)
             const pixels = new Float32Array(readWaterLevelImage.buffer);
 
-            // Get orientation
+            // Iegūst virzienu, kurā pēc peles kustināšanas tiek virzīts peldošais objekts
             waterNormal.set(pixels[1], 0, - pixels[2]);
 
             const pos = sphere.position;
             pos.y = pixels[0];
 
-            // Move sphere
+            // Kustina peldošo objektu par 0.1 vienībām attiecīgajā virzienā
             waterNormal.multiplyScalar(0.1);
             sphere.userData.velocity.add(waterNormal);
             sphere.userData.velocity.multiplyScalar(0.998);
             pos.add(sphere.userData.velocity);
 
+            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu (pa labi / pa kreisi)
             if (pos.x < - WATER_SURFACE_SIZE_HALF) {
                 pos.x = - WATER_SURFACE_SIZE_HALF + 0.001;
                 sphere.userData.velocity.x *= - 0.3;
@@ -309,6 +292,7 @@ export const sphereDynamics = (
                 sphere.userData.velocity.x *= - 0.3;
             }
 
+            // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu (uz augšu / uz leju)
             if (pos.z < - WATER_SURFACE_SIZE_HALF) {
                 pos.z = - WATER_SURFACE_SIZE_HALF + 0.001;
                 sphere.userData.velocity.z *= - 0.3;
