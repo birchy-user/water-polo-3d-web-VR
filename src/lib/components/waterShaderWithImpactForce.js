@@ -2,10 +2,9 @@
 // Galvenās izmaiņas:
 //  1) (TODO) "Shader" objekti ūdens virsmas izmaiņai ņem vērā nevis peles kursoru (kas bija oriģināli), 
 //     bet gan datus par kustīgu fizikas objektu, kas lido virsū ūdens virsmai (PROTOTIPS)
-//  2) (TODO) Mainīta ūdens krāsa / krāsas izmaiņas, lai vairāk atbilstu baseina ūdenim (gaišāks, lielāks caurspīdīgums)
+//  2) Mainīta ūdens krāsa / krāsas izmaiņas, lai vairāk atbilstu baseina ūdenim (gaišāks, lielāks caurspīdīgums)
 //  3) Noņemti GUI elementi (parametri ienāk tikai no ārējiem notikumiem, kā bumbas krišana pret ūdens virsmu)
-
-//  4) (TODO) Noņemtas peldošās lodes, pievienota iespēja norādīt citu modeli kā peldošu objektu uz virsmas
+//  4) Noņemtas peldošās lodes, pievienota iespēja norādīt citu modeli kā peldošu objektu uz virsmas
 
 import { THREE } from '../fix-dependencies/aframe';
 
@@ -14,7 +13,6 @@ import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
 // Visi ūdens virsmas mainīšanai nepieciešamie "shader" objekti:
 import { heightMapFragmentShader } from '../shaders/water/heightmapFragmentShader.js';
-import { smoothFragmentShader } from '../shaders/water/smoothFragmentShader';
 import { readWaterLevelFragmentShader } from '../shaders/water/readWaterLevelFragmentShader';
 import { waterVertexShader } from '../shaders/water/vertexShader';
 
@@ -138,9 +136,6 @@ export const initWater = (
     if (error !== null) {
         console.error(error);
     }
-
-    // "Shader", kas "nomierina" ūdens virsmu, pakāpeniski katrā kadrā samazinot tās krāsas deformācijas
-    // smoothShader = gpuCompute.createShaderMaterial(smoothFragmentShader, { smoothTexture: { value: null } });
 
     // Tiek izveidots ūdens līmeņa nolasīšanas "shader", kas katrā ūdens virsmas daļā nosaka, cik augstu ir pacelta ūdens virsma
     readWaterLevelShader = gpuCompute.createShaderMaterial(readWaterLevelFragmentShader, {
@@ -293,10 +288,10 @@ export const sphereDynamics = (
             const pos = physicalBody.position;
             physicalBody.position.y = pixels[0];
 
-            // Kustina peldošo objektu par 0.1 vienībām attiecīgajā virzienā
-            waterNormal.scale(0.1);  // skalāri pareizina normāles vektoru ar 0.1
+            // Kustina peldošo objektu attiecīgajā virzienā
+            waterNormal.scale(7);  // skalāri pareizina normāles vektoru
             physicalBody.velocity.vadd(waterNormal, physicalBody.velocity);  // physicalBody.velocity = physicalBody.velocity + waterNormal (saskaita abus vektorus)
-            physicalBody.velocity.scale(0.998);  // apslāpē kustību
+            physicalBody.velocity.scale(2);
             pos.vadd(physicalBody.velocity);
 
             // Peldošais objekts atsitās pret ūdens virsmas beigu robežu, pabīda to nedaudz uz pretējo virzienu

@@ -1,7 +1,6 @@
+// Avots: https://github.com/mrdoob/three.js/blob/master/examples/webgl_gpgpu_water.html
 export const waterVertexShader = /* glsl */`
     uniform sampler2D heightmap;
-
-    #define PHONG
 
     varying vec3 vViewPosition;
 
@@ -11,6 +10,7 @@ export const waterVertexShader = /* glsl */`
 
     #endif
 
+    // Bibliotēkas
     #include <common>
     #include <uv_pars_vertex>
     #include <displacementmap_pars_vertex>
@@ -30,7 +30,7 @@ export const waterVertexShader = /* glsl */`
         #include <color_vertex>
 
         // # include <beginnormal_vertex>
-        // Compute normal from heightmap
+        // No ūdens tekstūras augstuma iegūst normāles vektoru
         vec3 objectNormal = vec3(
             ( texture2D( heightmap, uv + vec2( - cellSize.x, 0 ) ).x - texture2D( heightmap, uv + vec2( cellSize.x, 0 ) ).x ) * TEXTURE_WIDTH / WATER_SURFACE_SIZE,
             ( texture2D( heightmap, uv + vec2( 0, - cellSize.y ) ).x - texture2D( heightmap, uv + vec2( 0, cellSize.y ) ).x ) * TEXTURE_WIDTH / WATER_SURFACE_SIZE,

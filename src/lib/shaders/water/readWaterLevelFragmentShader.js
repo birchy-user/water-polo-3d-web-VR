@@ -1,3 +1,4 @@
+// Avots: https://github.com/mrdoob/three.js/blob/master/examples/webgl_gpgpu_water.html
 export const readWaterLevelFragmentShader = /* glsl */`
     
     // Viļna izveidošanas sākuma punkts (kurā vietā ūdens līmeņa tekstūrā reģistrēts pacēlums)
@@ -5,7 +6,7 @@ export const readWaterLevelFragmentShader = /* glsl */`
 
     uniform sampler2D levelTexture;
 
-    // Integer to float conversion from https://stackoverflow.com/questions/17981163/webgl-read-pixels-from-floating-point-render-target
+    // Veseļā skaitļa konvertēšana peldošā punkta tipa skaitlī no: https://stackoverflow.com/questions/17981163/webgl-read-pixels-from-floating-point-render-target
 
     float shift_right( float v, float amt ) {
 

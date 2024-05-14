@@ -2,7 +2,6 @@
     import { onMount } from 'svelte';
 
     import { THREE, CANNON } from '../fix-dependencies/aframe';
-    import CannonDebugger from 'cannon-es-debugger';
     import { threeToCannon, ShapeType } from 'three-to-cannon';
 
     import { OrbitControls } from 'super-three/addons/controls/OrbitControls.js';
@@ -27,6 +26,16 @@
     let container;
 
     let controls;
+
+    let allowDynamicMovement = true;
+
+    // Gravitācija = 9.81 uz Zemes virsmas, bet pareizas simulācijas nolūkos nepieciešams to palielināt, lai bumbas kustība uz leju būtu reālistiskāka
+    // const GRAVITY = 9.81;
+    const GRAVITY = 40;
+
+    // ŪDENSPOLO BUMBAS PARAMETRI (atbilstoši World Aquatics noteikumiem: https://resources.fina.org/fina/document/2024/03/19/e27c972a-b19d-4289-997e-427718461f82/Competition-Regulations-version-1st-January-2024-.pdf)
+    const WATER_POLO_BALL_WEIGHT = 0.4; // Pieņem, ka bumbas masa ir 400g = 0.4 kg
+    const WATER_POLO_BALL_RESTITUTION = 0.68;  // Vidējā ūdenspolo bumbas restitūcija no: https://arxiv.org/pdf/1708.01282
     
     // Saules un debesu parametri:
     const parameters = {
@@ -73,12 +82,12 @@
     };
 
     // Fizikas pasaule:
-    let cannonDebugger;
     let physicsWorld;
 
     // 3D modeļu objekti, fiziskie ķermeņi:
     let waterPoloBall;
     let waterPoloBallBody;      // Bumbas fiziskais modelis
+    let ballRadius = 0;
 
     let waterPoloGoalNet;
     let goalNetMesh;            // Vārtu rāmis ar tīklu
@@ -138,9 +147,9 @@
     // Definē ainas fizisko pasauli, izmantojot Cannon.js
     // Fiziskās pasaules objektus jāspēj sasaistīt kopā ar renderētajiem (vizuāli redzamajiem) objektiem
     const initPhysics = () => {
-        // Fiziskās pasaules īpašības
+        // Fiziskās pasaules īpašības (Zemes gravitācija -9.81 m/s^2)
         physicsWorld = new CANNON.World({
-            gravity: new CANNON.Vec3(0, -9.81, 0),
+            gravity: new CANNON.Vec3(0, -GRAVITY, 0),
         });
 
         // objektu sadursmes materiāli:
@@ -148,19 +157,20 @@
         const goalNetMaterial = new CANNON.Material();
 
         const ballGoalContactMaterial = new CANNON.ContactMaterial(ballMaterial, goalNetMaterial, {
-            restitution: 0.3, // Jo augstāka restitūcija, jo spēcīgāk atsitas pret citu virsmu, ar kuru saduras
-            friction: 0.1     // Berze
+            // restitution: 0, // Jo augstāka restitūcija, jo spēcīgāk atsitas pret citu virsmu, ar kuru saduras
+            restitution: WATER_POLO_BALL_RESTITUTION
         });
 
-        physicsWorld.addContactMaterial(ballGoalContactMaterial);
+        const waterMaterial = new CANNON.Material();
 
-        cannonDebugger = new CannonDebugger(scene, physicsWorld);
+        physicsWorld.addContactMaterial(ballGoalContactMaterial);
 
         if (isWaterRendered) {
             // Ūdens virsmas fiziskais modelis ir nekustīga statiska plakne, kas nelaiž cauri objektus (citādi tas negatīvi ietekmē to animāciju pa ūdens virsmu)
             waterPhysicalBody = new CANNON.Body({
                 type: CANNON.Body.STATIC,
-                shape: new CANNON.Plane()
+                shape: new CANNON.Plane(),
+                material: waterMaterial
             });
 
             // Avots: https://schteppe.github.io/cannon.js/docs/classes/Quaternion.html
@@ -184,25 +194,39 @@
 
         if (waterPoloBall) {
             // Ūdenspolo bumbas fiziskais modelis
+            waterPoloBall.geometry.computeBoundingBox();
+            ballRadius = (waterPoloBall.geometry.boundingBox.max.x - waterPoloBall.geometry.boundingBox.min.x) / 2;
             waterPoloBallBody = new CANNON.Body({
-                mass: 5,
-                position: new CANNON.Vec3(0, 20, 0),
+                mass: WATER_POLO_BALL_WEIGHT,
+                position: new CANNON.Vec3(0, ballRadius + 0.5, 0),
                 material: ballMaterial
             });
+            waterPoloBallBody.addShape(new CANNON.Sphere(ballRadius));
+
+            // const {shape, offset, orientation} = threeToCannon(waterPoloBall, {
+            //     type: ShapeType.SPHERE
+            // });
+            // waterPoloBallBody.addShape(shape, offset, orientation);
+
+            // console.log("water polo body shape, offset, orientation: ", shape, offset, orientation);
 
             // Lai noteiktu pareizu kustību, vajag sekot līdzi, kad bumba saskārās ar vārtu objektu (saikne ar `sphereDynamics`)
             waterPoloBall.userData.collidedWithGoal = false;
 
-            const {shape, offset, orientation} = threeToCannon(waterPoloBall, {
-                type: 'Sphere'
-            });
-            waterPoloBallBody.addShape(shape, offset, orientation);
-
-            // waterPoloBallBody.linearDamping = 0.9;  // TODO: Eksperimentēt ar lineāru paātrinājuma samazināšanu kustībai uz leju
+            // waterPoloBallBody.angularDamping = 0.9;
+            waterPoloBallBody.linearDamping = 0.3;  // Gaisa pretestība
             waterPoloBallBody.velocity = new CANNON.Vec3(); // Peldināšana pa dinamisko ūdens virsmu
 
             floatingObjectsWithBodies[waterPoloBall.name] = waterPoloBallBody;
+
             physicsWorld.addBody(waterPoloBallBody);
+
+            // SADURSME AR ŪDENI
+            const waterMaterial = new CANNON.Material();
+
+            physicsWorld.addContactMaterial(new CANNON.ContactMaterial(ballMaterial, waterMaterial, {
+                restitution: WATER_POLO_BALL_RESTITUTION
+            }));
         }
 
         if (waterPoloGoalNet) {
@@ -214,7 +238,7 @@
             // Konstruē fizisko modeli vārtiem un tā sastāvdaļām:
             waterPoloGoalNetBody = new CANNON.Body({ 
                 mass: 0,
-                position: new CANNON.Vec3(-250, 1, 0),
+                position: new CANNON.Vec3(-350, 1, 0),
                 material: goalNetMaterial
             });
             
@@ -283,7 +307,7 @@
             physicsWorld.addBody(waterPoloGoalNetBody);
         }
 
-        // SADURSMES FIZIKAS (Collisions):
+        // SADURSMES FIZIKAS ("Collisions"):
         waterPoloBallBody.addEventListener('collide', (event) => {
             if (event.body === waterPoloGoalNetBody) {
                 console.log("ball collided with the net: ", event);
@@ -292,35 +316,58 @@
 
                 const impactVelocity = event.contact.getImpactVelocityAlongNormal();
 
-                // TODO: Paeksperimentēt ar paātrinājuma izmaiņām pēc sadursmes ar vārtiem (jo stiprāka sarursme, jo tālāk atpakaļ aizlido)
+                // TODO: Paeksperimentēt ar paātrinājuma izmaiņām pēc sadursmes ar vārtiem (jo stiprāka sadursme, jo tālāk atpakaļ aizlido)
                 waterPoloBallBody.velocity.x += event.contact.ni.x * impactVelocity * 0.5;
                 waterPoloBallBody.velocity.z += event.contact.ni.z * impactVelocity * 0.5;
 
-                // TODO: Ieviest sadursmes pretējo kustību atkarībā no tās intensitātes 
+            } else if (event.body === waterPhysicalBody) {
+                console.log("ball collided with water", event);
 
-                // if (impactStrength > 5) {
-                //     animateGoalNetSway(impactStrength, event.contact.bi.position, event.contact.ni);
-                // }
+                let velocity = waterPoloBallBody.velocity;
+
+                // Pieņem, ka ūdens virsma ir stingra virsma, kas atbilst spogulim - šādā vienkāršā modelī var izmantot Snella likumu jeb gaismas laušanas likumu, 
+                // lai aptuveni noteiktu, kāds ir izejas leņķis, kādā bumba atleks no ūdens virsmas pēc sadursmes ar to
+                let v_in = velocity.length();
+                let theta = Math.atan2(velocity.y, velocity.x); // krišanas leņķis
+
+                // sākotnējā ātruma vektora perpendikula komponente (y) pēc sīnusa likuma taisnleņķa trijstūrī
+                let v_perpendicular_in = v_in * Math.sin(theta);
+
+                // Aprēķina jauno ātrumu pēc restitūcijas koeficienta (sadursmes elastība): <ātrums pēc sadursmes> = <ātrums pirms sadursmes> * <restitūcijas koeficients> (avots: https://en.wikipedia.org/wiki/Coefficient_of_restitution)
+                // Pareizina ar -1, jo ir jāiegūst ūdens virsmas izejas vektora perpendikulārā komponente
+                // Ūdens paņem kaut kādu enerģiju, tāpēc izejas perpendikulārā komponente jāpareizina ar restitūcijas koeficientu
+                let v_perpendicular_out = -1 * WATER_POLO_BALL_RESTITUTION * v_perpendicular_in;
+                
+                // Pieņem, ka paralēlā komponente paliek konstanta (ignorē ūdens virsmas pretestību) - to aprēķina no sākotnējā ātruma vektora ar kosinusa likumu
+                let v_parallel_out = v_in * Math.cos(theta);
+
+                // Pitagora teorēma: <izejas_vektors> = sqrt(<izejas_perpendikulārā_komponente>^2 + <izejas_paralēlā_komponente>^2)
+                let v_out = Math.sqrt(v_perpendicular_out ** 2 + v_parallel_out ** 2);
+
+                let theta_out = Math.atan2(v_perpendicular_out, v_parallel_out);  // Izejas leņķis
+
+                // Rezultējošo vektoru un leņķi piereizina klāt pie izejas ātruma vektora
+                waterPoloBallBody.velocity.x = v_out * Math.cos(theta_out);
+                waterPoloBallBody.velocity.y = v_out * Math.sin(theta_out);
+
+                waterPoloBall.userData.hasCollidedWithWater = true;
             }
         });
-
-        const animateGoalNetSway = (impactStrength, position, normal) => {
-            // TODO: Vārtu "šūpošanās" atkarībā no bumbas lidošanas ātruma
-        }
     };
 
     /**
      * Izmanto staru izstarošanu ("raytracing"), lai no peles koordinātām ainā uzzinātu, vai ir atrasts `mesh` modelis
+     * 
      * @param mesh - modelis, kuru meklē
      * @param camera - 3D ainas kameras objekts 
      */
-    const getHitPoint = (mesh, camera) => {
+    const isMeshFound = (mesh, camera) => {
         // Izstaro staru no peles kursora koordinātām ainā
         raycaster.setFromCamera(mouseCoords, camera);
 
         // Atgriež tuvāko objektu, kuram trāpija stars (skatās tikai padotos modeļu objektus), ja tāds ir
-        const hits = raycaster.intersectObject(mesh);
-        return hits.length > 0 ? hits[0].point : undefined;
+        const intersects = raycaster.intersectObject(mesh);
+        return intersects.length > 0 ? intersects[0].point : undefined;
     };
 
     const moveMovementPlane = (point, camera) => {
@@ -338,19 +385,16 @@
      * @param position - pozīcija, kurā pievieno `constrainedBody`
      * @param constrainedBody - fiziskais ķermeņis, kuru vilks pa ainu
      */
-    const addJointConstraint = (position, constrainedBody) =>{
-        // Vektors, kas iet no fiziskā ķermeņa uz punktu ainā, kur tika reģistrēts peles klikšķis
-        const vector = new CANNON.Vec3().copy(position).vsub(constrainedBody.position);
-
-        // Pārveido attāluma vektoru starp peli un fizisko ķermeni par ķermeņa lokālo koordinātu sistēmu
-        const antiRotation = constrainedBody.quaternion.inverse();
-        const pivot = antiRotation.vmult(vector);
-
+    const addJointConstraint = (position, constrainedBody) => {
+        if (jointConstraint) {
+            physicsWorld.removeConstraint(jointConstraint);
+        }
+        
         jointBody.position.copy(position);
+        const pivot = new CANNON.Vec3();  // Centrē atskaites punktu relatīvi ķermeņa centram
 
         // Izveido jaunu saikni starp vilkšanas reģistrēšanas objektu un fizisko ķermeni (ja viens kustas, tad otrs seko līdzi)
         jointConstraint = new CANNON.PointToPointConstraint(constrainedBody, pivot, jointBody, new CANNON.Vec3(0, 0, 0));
-
         physicsWorld.addConstraint(jointConstraint);
     };
 
@@ -417,7 +461,7 @@
         scene.add(directionalLight);
 
         // Kustīga plakne, kas reģistrē vilkšanas kustības:
-        const planeGeometry = new THREE.PlaneGeometry(100, 100);
+        const planeGeometry = new THREE.PlaneGeometry(10000, 10000);
         const planeMaterial = new THREE.MeshLambertMaterial({ color: 0x777777 })
         movementPlane = new THREE.Mesh(
             planeGeometry,
@@ -457,7 +501,6 @@
 
         if (waterPoloBallGLTFData) {
             waterPoloBall = waterPoloBallGLTFData.scene.getObjectByName("Water_Polo_Ball");
-            waterPoloBall.position.set(0, 10, 0);
             waterPoloBall.scale.set(1, 1, 1);
 
             scene.add(waterPoloBall);
@@ -498,6 +541,8 @@
         if (poolModelGLTFData) {
             swimmingPool = poolModelGLTFData.scene;
             swimmingPool.scale.set(50, 80, 80);
+            // swimmingPool.scale.set(47, 80, 77);
+
             // swimmingPool.scale.set(80, 80, 80);
 
             let poolWaterSurfaceChildObjects = [];
@@ -538,6 +583,7 @@
 
         isWaterRendered = true;
 
+        // Pievieno kā uz ūdens virsmas peldošu objektu
         if (waterPoloBall) {
             floatingObjects.push(waterPoloBall);
         }
@@ -547,8 +593,12 @@
 
         // Peles kustības uzķeršanas funkcijas:
         container.addEventListener('pointerdown', (event) => {
+            const NDC_x = 2 * (event.clientX / renderer.domElement.clientWidth) - 1
+            const NDC_y = - (2 * (event.clientY / renderer.domElement.clientHeight) - 1);
+            mouseCoords.set(NDC_x, NDC_y);
+
             // Izstaro staru tur, kur rāda peles kursors - reģistrē notikumu, ja stars trāpa ūdenspolo bumbas modelim
-            const hitPoint = getHitPoint(waterPoloBall, camera);
+            const hitPoint = isMeshFound(waterPoloBall, camera);
             if (!hitPoint) {
                 return;
             }
@@ -559,9 +609,11 @@
             // Izveido saikni starp bumbas fizisko ķermeni un vilkšanas reģistrēšanas objektu
             addJointConstraint(hitPoint, waterPoloBallBody);
 
+            allowDynamicMovement = false;
+
             // Peles kustību reģistrē nākošajā kadrā, lai nodrošinātu, ka fiziskais objekts ir pakustējies peles kursora virzienā
             requestAnimationFrame(() => {
-                waterPoloBall.userData.isDragging = false;
+                waterPoloBall.userData.isDragging = true;
                 isDragging = true;
             });
         });
@@ -587,7 +639,7 @@
 
             // Projicē peles koordinātas uz kustīgās plaknes, iegūst saskarsmes punktu ar ūdenspolo bumbas fizisko ķermeni
             // Ja tāds ir atrasts, pakustina saiknes objektu uz to
-            const hitPoint = getHitPoint(movementPlane, camera);
+            const hitPoint = isMeshFound(movementPlane, camera);
 
             if (hitPoint) {
                 moveJoint(hitPoint);
@@ -596,9 +648,11 @@
 
         container.addEventListener('pointerup', () => {
             // Peles kursors ir atlaists, atlaiž vaļā satverto objektu
+            removeJointConstraint();
             waterPoloBall.userData.isDragging = false;
             isDragging = false;
-            removeJointConstraint();
+            
+            // allowDynamicMovement = true;
         });
 
         window.addEventListener('resize', onWindowResize);
@@ -619,20 +673,7 @@
 
         // Fizikas pasaules simulācijas animēšana katrā kadrā:
         if (physicsWorld) {
-            physicsWorld.fixedStep();   // Izpilda vienu fiksētu soli fiziskajā pasaulē (izpilda fiziskās pasaules simulācijas darbības)
-            cannonDebugger.update();    // Atjaunina fiziskās pasaules atkļūdotāja informāciju
-
-            // Katrā kadrā sinhronizē vizuālā modeļa un tā atbilstošā fiziskā ķermena pozīciju un rotāciju 3D ainā
-            waterPoloBall.position.copy(waterPoloBallBody.position);
-            waterPoloBall.quaternion.copy(waterPoloBallBody.quaternion);
-
-            waterPoloGoalNet.position.copy(waterPoloGoalNetBody.position);
-            waterPoloGoalNet.quaternion.copy(waterPoloGoalNetBody.quaternion);
-
-            // Ja bumbas fiziskais modelis ir atsities pret vārtu objektu, pagaida, līdz kamēr tā paātrinājums ir stipri samazinājies, un tad to atkal nogādā pie `sphereDynamics`
-            if (waterPoloBallBody && waterPoloBall.userData.collidedWithGoal && waterPoloBallBody.velocity.lengthSquared() < 0.05) {
-                waterPoloBall.userData.collidedWithGoal = false;
-            }
+            physicsWorld.step(1 / 60);   // Izpilda vienu fiksētu soli fiziskajā pasaulē (izpilda fiziskās pasaules simulācijas darbības)
         }
         
         render();
@@ -641,7 +682,7 @@
     };
 
     const render = () => {
-        if (isWaterRendered) {
+        if (isWaterRendered && physicsWorld) {
             // Staru izstarošana ("raycasting") no peles kursora
             const uniforms = heightmapVariable.material.uniforms;
             if (mouseMoved) {
@@ -665,7 +706,12 @@
 
             gpuCompute.compute();
 
-            if (!waterPoloBall.userData.collidedWithGoal) {
+            // Ja bumbas fiziskais modelis ir atsities pret vārtu objektu, pagaida, līdz kamēr tā paātrinājums ir stipri samazinājies, un tad to atkal nogādā pie `sphereDynamics`
+            if (waterPoloBall.userData.collidedWithGoal) {
+                waterPoloBall.userData.collidedWithGoal = false;
+            }
+
+            if (!waterPoloBall.userData.collidedWithGoal && allowDynamicMovement) {
                 sphereDynamics(
                     renderer,
                     gpuCompute,
@@ -678,6 +724,14 @@
                     floatingObjectsWithBodies
                 );
             }
+
+            // Katrā kadrā sinhronizē vizuālā modeļa un tā atbilstošā fiziskā ķermena pozīciju un rotāciju 3D ainā
+            waterPoloBall.position.copy(waterPoloBallBody.position);
+            // waterPoloBall.quaternion.copy(waterPoloBallBody.quaternion);
+            waterPoloBall.position.y -= ballRadius; // Bumbas vizuālo modeli nepieciešams centrēt ap tās fiziskā ķermeņa centru
+
+            waterPoloGoalNet.position.copy(waterPoloGoalNetBody.position);
+            waterPoloGoalNet.quaternion.copy(waterPoloGoalNetBody.quaternion);
 
             // pirms kadra renderēšanas iegūst ūdens līmeņa augstuma ("heightmap") iegūto rezultātu GPU renderētājā, to atjauno "fragment shader" objektā
             waterUniforms['heightmap'].value = gpuCompute.getCurrentRenderTarget(heightmapVariable).texture;
