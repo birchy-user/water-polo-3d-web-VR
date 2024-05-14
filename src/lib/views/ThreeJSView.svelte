@@ -14,6 +14,12 @@
     import { SimplexNoise } from 'super-three/addons/math/SimplexNoise.js';
 
     import { initWater, sphereDynamics } from '../components/waterShaderWithImpactForce';
+    import { 
+        GOAL_CHILD_MESH_Cube002, 
+        GOAL_CHILD_MESH_Goal, 
+        GOAL_CHILD_MESH_Plane001, 
+        POOL_WATER_SURFACE_NAME 
+    } from '../helpers/consts';
 
     let scene; 
     let camera;
@@ -520,11 +526,11 @@
 
             waterPoloGoalNet.traverse((child) => {
                 if (child.isMesh) {
-                    if (child.name === 'Goal') {
+                    if (child.name === GOAL_CHILD_MESH_Goal) {
                         goalNetMesh = child;
-                    } else if (child.name === 'Cube002') {
+                    } else if (child.name === GOAL_CHILD_MESH_Cube002) {
                         crossbarWithPostsMesh = child;
-                    } else if (child.name === 'Plane001') {
+                    } else if (child.name === GOAL_CHILD_MESH_Plane001) {
                         netFrameMesh = child;
                     }
                 }
@@ -549,7 +555,7 @@
 
             // Noņemam ūdens virsmu, jo to beigās aizvietos ar pareizi novietoto `water` objektu
             swimmingPool.traverse((child) => {
-                if (child.isMesh && child.name === 'WaterSurface') {
+                if (child.isMesh && child.name === POOL_WATER_SURFACE_NAME) {
                     poolWaterSurfaceChildObjects.push(child);
                 }
             });

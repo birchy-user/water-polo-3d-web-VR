@@ -11,13 +11,8 @@
   let isInVR = false;
 
   onMount(() => {
-    console.log("everything is mounted in main scene (AFRAME, THREE debug output): ", AFRAME, THREE);
-    // isInVR = THREE.renderer.xr.isPresenting;
     isInVR = AFRAME.utils.device.checkHeadsetConnected();
     browserName = getBrowserName();
-
-    console.log("is user in VR", isInVR);
-    console.log("current browser", browserName);
   });
 
   const getBrowserName = () => {
@@ -35,6 +30,7 @@
         else if (/^((?!chrome|android).)*safari/i.test(userAgent)) return 'Safari';
         else if (/IEMobile|Windows Phone|Lumia/i.test(userAgent)) return 'Windows Phone';
         else if (/Android/.test(userAgent)) return 'Android';
+
       } else {
           // Chrome 1 - 79
           const isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
