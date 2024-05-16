@@ -200,7 +200,7 @@
     <a-entity
       bind:this={waterPoloBall}
       id="ball"
-      gltf-model="url(/assets/models/water_polo_ball_FINAL_v2.glb)" 
+      gltf-model="url(/assets/models/soccer_ball.glb)" 
       position="0 2 -5"
       scale="1 1 1"
       mixin="baseSphere"

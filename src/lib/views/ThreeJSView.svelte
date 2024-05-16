@@ -499,7 +499,7 @@
         const fbxLoader = new THREE.FBXLoader(loadingManager);
         
         // Ūdenspolo bumba:
-        const waterPoloBallGLTFData = await modelLoader(gltfLoader, '/assets/models/water_polo_ball_FINAL_v2.glb')
+        const waterPoloBallGLTFData = await modelLoader(gltfLoader, '/assets/models/soccer_ball.glb')
             .catch((err) => {
                 console.log("unable to load water polo ball model", err);
                 return undefined;
