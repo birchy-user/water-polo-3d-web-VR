@@ -93,7 +93,7 @@
     // 3D modeļu objekti, fiziskie ķermeņi:
     let waterPoloBall;
     let waterPoloBallBody;      // Bumbas fiziskais modelis
-    let ballRadius = 0;
+    const ballRadius = 5;
 
     let waterPoloGoalNet;
     let goalNetMesh;            // Vārtu rāmis ar tīklu
@@ -200,8 +200,6 @@
 
         if (waterPoloBall) {
             // Ūdenspolo bumbas fiziskais modelis
-            waterPoloBall.geometry.computeBoundingBox();
-            ballRadius = (waterPoloBall.geometry.boundingBox.max.x - waterPoloBall.geometry.boundingBox.min.x) / 2;
             waterPoloBallBody = new CANNON.Body({
                 mass: WATER_POLO_BALL_WEIGHT,
                 position: new CANNON.Vec3(0, ballRadius + 0.5, 0),
@@ -506,8 +504,8 @@
             });
 
         if (waterPoloBallGLTFData) {
-            waterPoloBall = waterPoloBallGLTFData.scene.getObjectByName("Water_Polo_Ball");
-            waterPoloBall.scale.set(1, 1, 1);
+            waterPoloBall = waterPoloBallGLTFData.scene.children[0];
+            waterPoloBall.scale.set(15, 15, 15);
 
             scene.add(waterPoloBall);
         }
@@ -733,8 +731,7 @@
 
             // Katrā kadrā sinhronizē vizuālā modeļa un tā atbilstošā fiziskā ķermena pozīciju un rotāciju 3D ainā
             waterPoloBall.position.copy(waterPoloBallBody.position);
-            // waterPoloBall.quaternion.copy(waterPoloBallBody.quaternion);
-            waterPoloBall.position.y -= ballRadius; // Bumbas vizuālo modeli nepieciešams centrēt ap tās fiziskā ķermeņa centru
+            waterPoloBall.quaternion.copy(waterPoloBallBody.quaternion);
 
             waterPoloGoalNet.position.copy(waterPoloGoalNetBody.position);
             waterPoloGoalNet.quaternion.copy(waterPoloGoalNetBody.quaternion);
