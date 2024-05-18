@@ -10,6 +10,7 @@ Pagaidām prototipa ainas darbība ir testēta tikai uz šādām pārlūkprogram
 ## Galvenās atkarības
 - NPM (Node Package Manager) versija (pārbaudāma ar `npm -v`) >= 6.14.15
 - Node.js (pārbaudāma ar `node -v` terminālī) >= 14.18.0
+- A-Frame 1.5.0
 
 ## Kā palaist?
 1. Pēc projekta klonēšanas no GitHub ar `git clone` komandu, jāatver projekta atrašanās vieta (galvenā mape) un jāizpilda komanda `npm install`, lai projekta galvenajā mapē uz lokālās ierīces būtu pieejamas nepieciešamās bibliotēkas un pakotnes
