@@ -1,10 +1,10 @@
-// Adaptēts no: https://github.com/mrdoob/three.js/blob/master/examples/webgl_gpgpu_water.html
-// Galvenās izmaiņas:
-//  1) (TODO) "Shader" objekti ūdens virsmas izmaiņai ņem vērā nevis peles kursoru (kas bija oriģināli), 
-//     bet gan datus par kustīgu fizikas objektu, kas lido virsū ūdens virsmai (PROTOTIPS)
-//  2) Mainīta ūdens krāsa / krāsas izmaiņas, lai vairāk atbilstu baseina ūdenim (gaišāks, lielāks caurspīdīgums)
-//  3) Noņemti GUI elementi (parametri ienāk tikai no ārējiem notikumiem, kā bumbas krišana pret ūdens virsmu)
-//  4) Noņemtas peldošās lodes, pievienota iespēja norādīt citu modeli kā peldošu objektu uz virsmas
+/**
+ * Adaptēts no: https://github.com/mrdoob/three.js/blob/master/examples/webgl_gpgpu_water.html
+ * Galvenās izmaiņas:
+ *      1) Mainīta ūdens krāsa / krāsas izmaiņas, lai vairāk atbilstu baseina ūdenim (gaišāks, lielāks caurspīdīgums)
+ *      2) Noņemti GUI elementi (parametri ienāk tikai no ārējiem notikumiem, kā bumbas krišana pret ūdens virsmu)
+ *      3) Noņemtas peldošās lodes, pievienota iespēja norādīt citu modeli kā peldošu objektu uz virsmas
+ */
 
 import { THREE } from '../fix-dependencies/aframe';
 
