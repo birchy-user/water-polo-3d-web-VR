@@ -21,7 +21,7 @@
     "aframe-orbit-controls": "^1.3.2",
     "aframe-physics-extras": "^0.1.3",
     "ammo-debug-drawer": "^1.0.1",
-    "cannon-es": "^0.20.0",
+    "cannon-es": "^0.9.1",
     "cannon-es-debugger": "^1.0.0",
     "super-hands": "^3.0.4",
     "three-to-ammo": "^1.0.1"

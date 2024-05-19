@@ -11,12 +11,25 @@
   let isInVR = false;
 
   onMount(() => {
-    isInVR = AFRAME.utils.device.checkHeadsetConnected();
+    // Lai pareizi noteiktu, vai VR ierīce ir pievienota, jāpārbauda visi gadījumi atsevišķi:
+    isInVR = AFRAME.utils.device.checkHeadsetConnected() || 
+             AFRAME.utils.device.isMobileVR() ||
+             AFRAME.utils.device.isFirefoxReality() ||
+             AFRAME.utils.device.isOculusBrowser() ||
+             AFRAME.utils.device.checkVRSupport()
+
     browserName = getBrowserName();
   });
 
   const getBrowserName = () => {
-    if (!isInVR) {
+    if (isInVR) {
+      // TODO: Pievienot papildus VR ierīču nosaukumus
+      if (AFRAME.utils.device.isOculusBrowser()) return 'Oculus Browser';
+      else if (AFRAME.utils.device.isMobileVR()) return 'Stand-Alone VR pārlūkprogramma';
+      else if (AFRAME.utils.device.isFirefoxReality()) return 'Firefox Reality';
+
+      return 'VR pārlūkprogramma';
+    } else {
       // Adaptēts no: https://stackoverflow.com/a/9851769
       // Balstīts uz aktīvajiem pārlūkiem, kas atbalsta WebXR Device API un WebVR API (https://aframe.io/docs/1.5.0/introduction/vr-headsets-and-webxr-browsers.html#what-browsers-support-vr)
       if (AFRAME.utils.device.isMobile()) {
@@ -57,12 +70,8 @@
           else if (isEdge) return 'Edge';
       }
 
-    } else if (isInVR) {
-      // TODO: Pievienot papildus VR ierīču nosaukumus
-      if (AFRAME.utils.device.isOculusBrowser()) return 'Oculus Browser';
+      return 'Nezināma pārlūkprogramma';
     }
-
-    return 'Nezināma pārlūkprogramma';
   }
 </script>
 

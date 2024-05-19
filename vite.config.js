@@ -9,6 +9,9 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       ...(isDev ? [basicSsl()] : []),  // HTTPS ar "basicSsl" tikai "dev" serverī (uz lokālās ierīces), jo produkcijā jau ir HTTPS (Vercel)
       svelte()
-    ]
+    ],
+    define: {
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
+    },
   };
 });
