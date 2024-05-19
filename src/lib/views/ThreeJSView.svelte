@@ -13,7 +13,7 @@
     import { GPUComputationRenderer } from 'super-three/addons/misc/GPUComputationRenderer.js';
     import { SimplexNoise } from 'super-three/addons/math/SimplexNoise.js';
 
-    import { initWater, sphereDynamics } from '../components/waterShaderWithImpactForce';
+    import { initWater, moveFloatingObjects } from '../components/waterShaderWithImpactForce';
     import { 
         GOAL_CHILD_MESH_Cube002, 
         GOAL_CHILD_MESH_Goal, 
@@ -214,7 +214,7 @@
 
             // console.log("water polo body shape, offset, orientation: ", shape, offset, orientation);
 
-            // Lai noteiktu pareizu kustību, vajag sekot līdzi, kad bumba saskārās ar vārtu objektu (saikne ar `sphereDynamics`)
+            // Lai noteiktu pareizu kustību, vajag sekot līdzi, kad bumba saskārās ar vārtu objektu (saikne ar `moveFloatingObjects`)
             waterPoloBall.userData.collidedWithGoal = false;
 
             // waterPoloBallBody.angularDamping = 0.9;
@@ -710,13 +710,13 @@
 
             gpuCompute.compute();
 
-            // Ja bumbas fiziskais modelis ir atsities pret vārtu objektu, pagaida, līdz kamēr tā paātrinājums ir stipri samazinājies, un tad to atkal nogādā pie `sphereDynamics`
+            // Ja bumbas fiziskais modelis ir atsities pret vārtu objektu, pagaida, līdz kamēr tā paātrinājums ir stipri samazinājies, un tad to atkal nogādā pie `moveFloatingObjects`
             if (waterPoloBall.userData.collidedWithGoal) {
                 waterPoloBall.userData.collidedWithGoal = false;
             }
 
             if (!waterPoloBall.userData.collidedWithGoal && allowDynamicMovement) {
-                sphereDynamics(
+                moveFloatingObjects(
                     renderer,
                     gpuCompute,
                     heightmapVariable,

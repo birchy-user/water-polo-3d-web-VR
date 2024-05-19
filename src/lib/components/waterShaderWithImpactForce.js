@@ -176,16 +176,30 @@ export const initWater = (
 }
 
 /**
- * Aizpilda tekstūru, izmantojot 2D "Simplex Noise" trokšņa ģenerēšanas algoritmu (https://en.wikipedia.org/wiki/Simplex_noise)
+ * Aizpilda tekstūru, izmantojot 2D "Simplex Noise" trokšņa ģenerēšanas algoritmu
+ * Oriģinālā implementācija "Simplex Noise" algoritmam, ko izmanto Three.js ietvars, ir balstīta uz: https://cgvr.cs.uni-bremen.de/teaching/cg_literatur/simplexnoise.pdf
  *
  * @param {*} texture - tekstūras objekts
  */
 const fillTexture = (texture) => {
+    // Ūdens tekstūras maksimālais augstums (nosaka trokšņa funkcijas vērtību maksimālo robežu)
     const waterMaxHeight = 10;
 
     const noise = (x, y) => {
+        // Trokšņa amplitūda
         let multR = waterMaxHeight;
+
+        // Trokšņa frekvence (1 / T, periods T = 8) - sākumā maza vērtība, lai nodrošinātu, ka troksnis sākas ar plašāku soli
         let mult = 0.025;
+
+        /**
+         * Ģenerē vairākas trokšņa "oktāvas", kur katra nākošā oktāva padara trokšņa vērtību arvien smalkāku
+         * "Oktāvas" atbilst ūdens viļņiem, kas laika gaitā paliek mazāki un mazāki
+         * "multR" katrā nākošajā oktāvā tiek neregulāri samazināts, tādā veidā padarot troksni nevienmērīgāku un vairāk izkliedētu
+         * "mult" katrā oktāvā tiek konstanti palielināts par 1.25, tādā veidā pieskaņojot trokšņa smalkumu
+         * 
+         * Visi zemāk redzamie konstantie skaitļi var tikt mainīti, lai eksperimentētu ar mainīgām ūdens virsmas deformācijām trokšņa ietekmē
+         */
         let r = 0;
         for (let i = 0; i < 15; i ++) {
             r += multR * simplex.noise(x * mult, y * mult);
@@ -193,25 +207,28 @@ const fillTexture = (texture) => {
             mult *= 1.25;
         }
 
+        // Aprēķinātā trokšņa vērtība dotajam 2D pikselim ar koordinātām (x, y)
         return r;
     }
 
     const pixels = texture.image.data;
 
     // Ienākošā tekstūra ir TEXTURE_WIDTH x TEXTURE_WIDTH izmērā, katru vērtību aizpilda ar jaunu trokšņainu vērtību,
-    // izmantojot Simplex Noise algoritma pamata ideju, kas ietver procesu, kurā katrai virsotnei (pikselim) aprēķina tās atbilstošo četrstūri (no tuvākajām četrām virsotnēm)    
-    // Rezultātā iegūst tekstūru, kas atbilst trokšņainai ūdens virsmai, simulējot viļņus dažādos augstumos un pozīcijās (atbilstoši Simplex Noise trokšņa algoritmam)
+    // Rezultātā iegūst tekstūru, kas atbilst trokšņainai ūdens virsmai, simulējot viļņus dažādos augstumos un pozīcijās, kur katrs pikselis satur datus RGBA formātā
     let p = 0;
     for (let j = 0; j < TEXTURE_WIDTH; j ++) {
         for (let i = 0; i < TEXTURE_WIDTH; i ++) {
+            // Pikseļa koordinātas normalizē trokšņa ģenerēšanai atbilstošā telpā
             const x = i * 128 / TEXTURE_WIDTH;
             const y = j * 128 / TEXTURE_WIDTH;
 
-            pixels[p + 0] = noise(x, y);
-            pixels[p + 1] = pixels[p + 0];
-            pixels[p + 2] = 0;
-            pixels[p + 3] = 1;
+            // Trokšņa vērtības RGBA formātā 
+            pixels[p + 0] = noise(x, y); // R kanāls
+            pixels[p + 1] = pixels[p + 0]; // G kanāls
+            pixels[p + 2] = 0; // B kanāls
+            pixels[p + 3] = 1; // Konstanta A (alpha jeb caurspīdīguma) kanāla vērtība
 
+            // Pāriet pie nākošā 4x1 tekstūras pikseļa RGA formātā
             p += 4;
         }
     }
@@ -232,7 +249,7 @@ const fillTexture = (texture) => {
  * @param {*} floatingObjects - peldošie objekti
  * @param {*} floatingObjectsWithBodies - peldošo objektu atbilstošie fiziskās pasaules ķermeņi
  */
-export const sphereDynamics = (
+export const moveFloatingObjects = (
     renderer,
     gpuCompute,
     heightmapVariable,
