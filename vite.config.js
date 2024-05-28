@@ -10,6 +10,11 @@ export default defineConfig(({ command, mode }) => {
       ...(isDev ? [basicSsl()] : []),  // HTTPS ar "basicSsl" tikai "dev" serverī (uz lokālās ierīces), jo produkcijā jau ir HTTPS (Vercel)
       svelte()
     ],
+    resolve: {
+      alias: {
+        'aframe-physics-system': '@c-frame/aframe-physics-system',
+      }
+    },
     define: {
       'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
     },
