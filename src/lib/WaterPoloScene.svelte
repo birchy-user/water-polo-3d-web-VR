@@ -46,7 +46,7 @@
 
       } else {
           // Chrome 1 - 79
-          const isChrome = !!window.chrome && (!!window.chrome.webstore || !!window.chrome.runtime);
+          const isChrome = !!window.chrome;
 
           // Opera 8.0+
           const isOpera = (!!window.opr && !!opr.addons) || !!window.opera || navigator.userAgent.indexOf(' OPR/') >= 0;
@@ -63,7 +63,7 @@
           // Edge 20+
           const isEdge = !isIE && !!window.StyleMedia;
 
-          if (isChrome) return 'Chrome';
+          if (isChrome && !isOpera) return 'Google Chrome';
           else if (isOpera) return 'Opera';
           else if (isFirefox) return 'Firefox';
           else if (isSafari) return 'Safari';
