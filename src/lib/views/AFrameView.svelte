@@ -41,7 +41,7 @@
     // Global state, lai pārbaudītu, vai tiešām lietotājs ir iegājis VR režīmā
     if (!AFRAME.components['adjust-for-vr']) {
       AFRAME.registerComponent('adjust-for-vr', {
-        init: function() {
+        init: function () {
           this.el.sceneEl.addEventListener('enter-vr', () => {
               console.log('Entered VR');
 
@@ -68,7 +68,7 @@
           ball: { type: 'selector' },
         },
 
-        init: function() {
+        init: function () {
           this.el.addEventListener('bbuttondown', this.recallBallOnBPress.bind(this));
         },
 
@@ -102,6 +102,99 @@
       });
     }
 
+    // Komponente kustībai pa VR ainu, izmantojot Meta Quest 2 VR kontrolieru "thumbstick" (kontrolsviru)
+    // Adaptēts no: https://github.com/gftruj/webzamples/blob/master/aframe/controls/oculus-thumbstick-controls.js
+    if (!AFRAME.components['move-with-thumbstick']) {
+      AFRAME.registerComponent('move-with-thumbstick', {
+        init: function () {
+          this.velocity = new THREE.Vector3(0, 0, 0);
+          this.movementData = new THREE.Vector2(0, 0);
+
+          this.thumbstickMoved = this.thumbstickMoved.bind(this);
+          this.el.addEventListener('thumbstickmoved', this.thumbstickMoved);
+        },
+
+        update: function() {
+          this.cameraWrapperEl = document.querySelector('#rig');
+        },
+
+        thumbstickMoved: function (evt) {
+          const leftRightMovement = evt.detail.x;
+          const upDownMovement = evt.detail.y;
+
+          this.movementData.set(leftRightMovement, upDownMovement);
+        },
+
+        tick: function (time, timeDelta) {
+          if (!this.el.sceneEl.is('vr-mode')) return;
+
+          if (!this.velocity.x && !this.velocity.z && !this.movementData.length()) { return; }
+
+          timeDelta = timeDelta / 1000;  // cik sekundes pagāja starp tagadējo un iepriekšējo kadru
+          this.updateVelocity(timeDelta);
+
+          if (!this.velocity.x && !this.velocity.z) { return; }
+
+          // Aprēķina kustības virzienu, tajā pakustina lietotāja perspektīvas kameru
+          this.cameraWrapperEl.object3D.position.add(this.getMovementVector(timeDelta));
+        },
+
+        updateVelocity: function (timeDelta) {   
+          // Ja FPS ir zemāks par 5 (starp tagadējo un iepriekšējo kadru pagāja 0.2 sekundes), tad aptur kustību
+          if (timeDelta > 0.2) {
+              this.velocity.x = 0;
+              this.velocity.z = 0;
+              return;
+          }
+
+          // Kustības apslāpēšana
+          // Avots: https://gamedev.stackexchange.com/questions/151383/frame-rate-independant-movement-with-acceleration
+          const easingScale = 1.1;
+          const scaledEasing = Math.pow(1 / easingScale, timeDelta * 60);
+          if (this.velocity.x !== 0) {
+              this.velocity.x = this.velocity.x * scaledEasing;
+          }
+          if (this.velocity.z !== 0) {
+              this.velocity.z = this.velocity.z * scaledEasing;
+          }
+
+          // Apslāpē kustību pie zemiem ātrumiem
+          const MIN_VELOCITY = 0.00001;
+          if (Math.abs(this.velocity.x) < MIN_VELOCITY) this.velocity.x = 0;
+          if (Math.abs(this.velocity.z) < MIN_VELOCITY) this.velocity.z = 0;
+
+          // Update velocity using keys pressed.
+          const acceleration = 45;
+          if (this.movementData.x) {
+              this.velocity.x += acceleration * this.movementData.x * timeDelta; 
+          }
+          if (this.movementData.y) {
+              this.velocity.z += acceleration * this.movementData.y * timeDelta;
+          }
+        },
+
+        getMovementVector: function (timeDelta) {
+          let directionVector = new THREE.Vector3(0, 0, 0);
+          let rotationEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+          let rotation = this.el.sceneEl.camera.el.object3D.rotation;
+          
+          directionVector.copy(this.velocity);
+          directionVector.multiplyScalar(timeDelta);
+
+          // Nav veikta rotācija, ejam taisni uz priekšu norādītajā virzienā
+          if (!rotation) return directionVector;
+
+          rotationEuler.set(0, rotation.y, 0);
+          directionVector.applyEuler(rotationEuler);
+
+          return directionVector;
+        },
+        
+        remove: function () {
+          this.el.removeEventListener('thumbstickmoved', this.thumbstickMoved);
+        }
+    });
+    }
     
     aframeScene.addEventListener('loaded', () => {
       console.log("aframeScene loaded: ", aframeScene);
@@ -166,6 +259,7 @@
         id="leftHandController"
         mixin="physics-hands"
         hand-controls="hand: left"
+        move-with-thumbstick
       >
       </a-entity>
       <a-entity 
