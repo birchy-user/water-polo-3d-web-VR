@@ -61,9 +61,9 @@
           const isIE = /*@cc_on!@*/false || !!document.documentMode;
 
           // Edge 20+
-          const isEdge = !isIE && !!window.StyleMedia;
+          const isEdge = !isIE && !!window.styleMedia;
 
-          if (isChrome && !isOpera) return 'Google Chrome';
+          if (isChrome && !isOpera && !isEdge) return 'Google Chrome';
           else if (isOpera) return 'Opera';
           else if (isFirefox) return 'Firefox';
           else if (isSafari) return 'Safari';
